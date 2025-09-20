@@ -7,90 +7,28 @@ import { Vote, Shield, Users, BarChart3, Lock, CheckCircle } from "lucide-react"
 export default function Home() {
   return (
     <MainLayout>
-      <div className="container mx-auto px-4 py-8">
+      <div className="container mx-auto px-4 py-6 sm:py-8">
         {/* Hero Section */}
-        <div className="text-center mb-16">
+        <div className="text-center mb-12 sm:mb-16">
           <div className="flex items-center justify-center mb-6">
-            <Vote className="h-16 w-16 text-primary" />
+            <Vote className="h-12 w-12 sm:h-16 sm:w-16 text-primary" />
           </div>
-          <h1 className="text-4xl font-bold tracking-tight mb-4">
-            Secure Digital Voting System
+          <h1 className="text-2xl sm:text-3xl lg:text-4xl font-bold tracking-tight mb-4">
+            E-Voting Management System
           </h1>
-          <p className="text-xl text-muted-foreground mb-8 max-w-2xl mx-auto">
-            Experience the future of democracy with our blockchain-powered e-voting platform.
-            Transparent, secure, and accessible voting for everyone.
+          <p className="text-base sm:text-lg lg:text-xl text-muted-foreground mb-8 max-w-2xl mx-auto">
+            Admin-controlled voting system where administrators manage elections and authorized users can vote.
           </p>
-          <div className="flex gap-4 justify-center">
-            <Button size="lg" asChild>
-              <Link href="/register">Get Started</Link>
-            </Button>
-            <Button variant="outline" size="lg" asChild>
-              <Link href="/login">Sign In</Link>
-            </Button>
-          </div>
         </div>
 
-        {/* Features Section */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-16">
+        {/* Access Section */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 sm:gap-8 max-w-4xl mx-auto">
           <Card>
             <CardHeader>
-              <Lock className="h-8 w-8 text-primary mb-2" />
-              <CardTitle>Secure & Private</CardTitle>
-              <CardDescription>
-                End-to-end encryption ensures your vote remains private and secure
-              </CardDescription>
-            </CardHeader>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CheckCircle className="h-8 w-8 text-primary mb-2" />
-              <CardTitle>Transparent</CardTitle>
-              <CardDescription>
-                Blockchain technology provides complete transparency and auditability
-              </CardDescription>
-            </CardHeader>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <Users className="h-8 w-8 text-primary mb-2" />
-              <CardTitle>Accessible</CardTitle>
-              <CardDescription>
-                Vote from anywhere, anytime with our user-friendly interface
-              </CardDescription>
-            </CardHeader>
-          </Card>
-        </div>
-
-        {/* Quick Access Section */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-          <Card>
-            <CardHeader>
-              <Vote className="h-12 w-12 text-primary mb-4" />
-              <CardTitle>For Voters</CardTitle>
-              <CardDescription>
-                Participate in elections, view results, and manage your voting profile
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-2">
-                <Button className="w-full" asChild>
-                  <Link href="/login">Voter Login</Link>
-                </Button>
-                <Button variant="outline" className="w-full" asChild>
-                  <Link href="/register">Register to Vote</Link>
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <Shield className="h-12 w-12 text-primary mb-4" />
-              <CardTitle>For Administrators</CardTitle>
-              <CardDescription>
-                Manage elections, candidates, voters, and monitor results
+              <Shield className="h-10 w-10 sm:h-12 sm:w-12 text-primary mb-4" />
+              <CardTitle className="text-lg sm:text-xl">Administrator Access</CardTitle>
+              <CardDescription className="text-sm sm:text-base">
+                Create voting processes, manage candidates and voters, view results
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -99,24 +37,56 @@ export default function Home() {
               </Button>
             </CardContent>
           </Card>
+
+          <Card>
+            <CardHeader>
+              <Vote className="h-10 w-10 sm:h-12 sm:w-12 text-primary mb-4" />
+              <CardTitle className="text-lg sm:text-xl">Voter Access</CardTitle>
+              <CardDescription className="text-sm sm:text-base">
+                Vote in elections you've been authorized to participate in
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Button className="w-full" asChild>
+                <Link href="/vote">Access Voting</Link>
+              </Button>
+            </CardContent>
+          </Card>
         </div>
 
-        {/* Stats Section */}
-        <div className="mt-16 text-center">
-          <h2 className="text-2xl font-bold mb-8">Trusted by Democracy</h2>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-            <div>
-              <div className="text-3xl font-bold text-primary mb-2">100%</div>
-              <div className="text-muted-foreground">Secure Votes</div>
-            </div>
-            <div>
-              <div className="text-3xl font-bold text-primary mb-2">24/7</div>
-              <div className="text-muted-foreground">Availability</div>
-            </div>
-            <div>
-              <div className="text-3xl font-bold text-primary mb-2">∞</div>
-              <div className="text-muted-foreground">Transparency</div>
-            </div>
+        {/* Features Section */}
+        <div className="mt-12 sm:mt-16">
+          <h2 className="text-xl sm:text-2xl font-bold text-center mb-6 sm:mb-8">System Features</h2>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
+            <Card>
+              <CardHeader>
+                <Shield className="h-6 w-6 sm:h-8 sm:w-8 text-primary mb-2" />
+                <CardTitle className="text-base sm:text-lg">Admin Controlled</CardTitle>
+                <CardDescription className="text-sm">
+                  Only administrators can create elections and manage the voting process
+                </CardDescription>
+              </CardHeader>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <Users className="h-6 w-6 sm:h-8 sm:w-8 text-primary mb-2" />
+                <CardTitle className="text-base sm:text-lg">Authorized Voting</CardTitle>
+                <CardDescription className="text-sm">
+                  Only users added by admin can participate in voting
+                </CardDescription>
+              </CardHeader>
+            </Card>
+
+            <Card className="sm:col-span-2 lg:col-span-1">
+              <CardHeader>
+                <BarChart3 className="h-6 w-6 sm:h-8 sm:w-8 text-primary mb-2" />
+                <CardTitle className="text-base sm:text-lg">Real-time Results</CardTitle>
+                <CardDescription className="text-sm">
+                  View voting results and analytics in real-time
+                </CardDescription>
+              </CardHeader>
+            </Card>
           </div>
         </div>
       </div>

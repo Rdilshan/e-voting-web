@@ -12,6 +12,7 @@ import {
     AlertCircle,
     CheckCircle
 } from "lucide-react"
+import { Button } from "@/components/ui/button"
 
 // Mock data - in real app this would come from API
 const dashboardData = {
@@ -31,16 +32,16 @@ const dashboardData = {
 export default function AdminDashboard() {
     return (
         <MainLayout userType="admin" userName="Admin User" showSidebar={true}>
-            <div className="space-y-6">
+            <div className="space-y-4 sm:space-y-6">
                 <div>
-                    <h1 className="text-3xl font-bold tracking-tight">Dashboard</h1>
-                    <p className="text-muted-foreground">
+                    <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">Dashboard</h1>
+                    <p className="text-muted-foreground text-sm sm:text-base">
                         Overview of your e-voting system
                     </p>
                 </div>
 
                 {/* Stats Cards */}
-                <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+                <div className="grid gap-3 sm:gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
                     <Card>
                         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                             <CardTitle className="text-sm font-medium">Total Elections</CardTitle>
@@ -94,41 +95,41 @@ export default function AdminDashboard() {
                     </Card>
                 </div>
 
-                <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-7">
+                <div className="grid gap-4 lg:grid-cols-7">
                     {/* Recent Elections */}
-                    <Card className="col-span-4">
+                    <Card className="lg:col-span-4">
                         <CardHeader>
-                            <CardTitle>Recent Elections</CardTitle>
-                            <CardDescription>
+                            <CardTitle className="text-lg sm:text-xl">Recent Elections</CardTitle>
+                            <CardDescription className="text-sm">
                                 Overview of recent and upcoming elections
                             </CardDescription>
                         </CardHeader>
                         <CardContent>
-                            <div className="space-y-4">
+                            <div className="space-y-3 sm:space-y-4">
                                 {dashboardData.recentElections.map((election) => (
-                                    <div key={election.id} className="flex items-center justify-between p-4 border rounded-lg">
-                                        <div className="flex items-center space-x-4">
+                                    <div key={election.id} className="flex flex-col sm:flex-row sm:items-center sm:justify-between p-3 sm:p-4 border rounded-lg space-y-2 sm:space-y-0">
+                                        <div className="flex items-center space-x-3 sm:space-x-4">
                                             <div className="flex items-center space-x-2">
                                                 {election.status === "active" && (
-                                                    <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
+                                                    <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse flex-shrink-0" />
                                                 )}
                                                 {election.status === "completed" && (
-                                                    <CheckCircle className="w-4 h-4 text-green-500" />
+                                                    <CheckCircle className="w-4 h-4 text-green-500 flex-shrink-0" />
                                                 )}
                                                 {election.status === "upcoming" && (
-                                                    <Calendar className="w-4 h-4 text-blue-500" />
+                                                    <Calendar className="w-4 h-4 text-blue-500 flex-shrink-0" />
                                                 )}
-                                                <div>
-                                                    <p className="font-medium">{election.title}</p>
-                                                    <p className="text-sm text-muted-foreground">
+                                                <div className="min-w-0">
+                                                    <p className="font-medium text-sm sm:text-base truncate">{election.title}</p>
+                                                    <p className="text-xs sm:text-sm text-muted-foreground">
                                                         Ends: {new Date(election.endDate).toLocaleDateString()}
                                                     </p>
                                                 </div>
                                             </div>
                                         </div>
-                                        <div className="text-right">
-                                            <p className="font-medium">{election.votes.toLocaleString()} votes</p>
-                                            <p className="text-sm text-muted-foreground capitalize">{election.status}</p>
+                                        <div className="text-left sm:text-right ml-6 sm:ml-0">
+                                            <p className="font-medium text-sm sm:text-base">{election.votes.toLocaleString()} votes</p>
+                                            <p className="text-xs sm:text-sm text-muted-foreground capitalize">{election.status}</p>
                                         </div>
                                     </div>
                                 ))}
@@ -137,42 +138,32 @@ export default function AdminDashboard() {
                     </Card>
 
                     {/* Quick Actions */}
-                    <Card className="col-span-3">
+                    <Card className="lg:col-span-3">
                         <CardHeader>
-                            <CardTitle>Quick Actions</CardTitle>
-                            <CardDescription>
+                            <CardTitle className="text-lg sm:text-xl">Quick Actions</CardTitle>
+                            <CardDescription className="text-sm">
                                 Common administrative tasks
                             </CardDescription>
                         </CardHeader>
-                        <CardContent className="space-y-4">
-                            <div className="grid gap-2">
-                                <button className="flex items-center justify-between p-3 text-left border rounded-lg hover:bg-accent transition-colors">
-                                    <div className="flex items-center space-x-3">
-                                        <Vote className="w-4 h-4" />
-                                        <span className="text-sm font-medium">Create New Election</span>
-                                    </div>
-                                </button>
+                        <CardContent className="space-y-3 sm:space-y-4">
+                            <div className="grid gap-2 sm:gap-3">
+                                <Button
+                                    className="justify-start h-auto p-3 text-left"
+                                    variant="outline"
+                                    onClick={() => window.location.href = '/admin/create-election'}
+                                >
+                                    <Vote className="w-4 h-4 mr-3 flex-shrink-0" />
+                                    <span className="text-sm font-medium">Create New Election</span>
+                                </Button>
 
-                                <button className="flex items-center justify-between p-3 text-left border rounded-lg hover:bg-accent transition-colors">
-                                    <div className="flex items-center space-x-3">
-                                        <UserCheck className="w-4 h-4" />
-                                        <span className="text-sm font-medium">Add Candidate</span>
-                                    </div>
-                                </button>
-
-                                <button className="flex items-center justify-between p-3 text-left border rounded-lg hover:bg-accent transition-colors">
-                                    <div className="flex items-center space-x-3">
-                                        <Users className="w-4 h-4" />
-                                        <span className="text-sm font-medium">Register Voter</span>
-                                    </div>
-                                </button>
-
-                                <button className="flex items-center justify-between p-3 text-left border rounded-lg hover:bg-accent transition-colors">
-                                    <div className="flex items-center space-x-3">
-                                        <BarChart3 className="w-4 h-4" />
-                                        <span className="text-sm font-medium">View Results</span>
-                                    </div>
-                                </button>
+                                <Button
+                                    className="justify-start h-auto p-3 text-left"
+                                    variant="outline"
+                                    onClick={() => window.location.href = '/admin/results'}
+                                >
+                                    <BarChart3 className="w-4 h-4 mr-3 flex-shrink-0" />
+                                    <span className="text-sm font-medium">View Results</span>
+                                </Button>
                             </div>
                         </CardContent>
                     </Card>
@@ -181,34 +172,34 @@ export default function AdminDashboard() {
                 {/* System Status */}
                 <Card>
                     <CardHeader>
-                        <CardTitle>System Status</CardTitle>
-                        <CardDescription>
+                        <CardTitle className="text-lg sm:text-xl">System Status</CardTitle>
+                        <CardDescription className="text-sm">
                             Current system health and alerts
                         </CardDescription>
                     </CardHeader>
                     <CardContent>
-                        <div className="grid gap-4 md:grid-cols-3">
+                        <div className="grid gap-3 sm:gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
                             <div className="flex items-center space-x-3 p-3 border rounded-lg">
-                                <CheckCircle className="w-5 h-5 text-green-500" />
-                                <div>
-                                    <p className="font-medium">Blockchain Network</p>
-                                    <p className="text-sm text-muted-foreground">Operational</p>
+                                <CheckCircle className="w-5 h-5 text-green-500 flex-shrink-0" />
+                                <div className="min-w-0">
+                                    <p className="font-medium text-sm sm:text-base">Blockchain Network</p>
+                                    <p className="text-xs sm:text-sm text-muted-foreground">Operational</p>
                                 </div>
                             </div>
 
                             <div className="flex items-center space-x-3 p-3 border rounded-lg">
-                                <CheckCircle className="w-5 h-5 text-green-500" />
-                                <div>
-                                    <p className="font-medium">Voting System</p>
-                                    <p className="text-sm text-muted-foreground">Online</p>
+                                <CheckCircle className="w-5 h-5 text-green-500 flex-shrink-0" />
+                                <div className="min-w-0">
+                                    <p className="font-medium text-sm sm:text-base">Voting System</p>
+                                    <p className="text-xs sm:text-sm text-muted-foreground">Online</p>
                                 </div>
                             </div>
 
-                            <div className="flex items-center space-x-3 p-3 border rounded-lg">
-                                <AlertCircle className="w-5 h-5 text-yellow-500" />
-                                <div>
-                                    <p className="font-medium">Database</p>
-                                    <p className="text-sm text-muted-foreground">High Load</p>
+                            <div className="flex items-center space-x-3 p-3 border rounded-lg sm:col-span-2 lg:col-span-1">
+                                <AlertCircle className="w-5 h-5 text-yellow-500 flex-shrink-0" />
+                                <div className="min-w-0">
+                                    <p className="font-medium text-sm sm:text-base">Database</p>
+                                    <p className="text-xs sm:text-sm text-muted-foreground">High Load</p>
                                 </div>
                             </div>
                         </div>
