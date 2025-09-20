@@ -51,24 +51,9 @@ const adminNavItems = [
 
 const voterNavItems = [
     {
-        title: "Dashboard",
-        href: "/dashboard",
-        icon: LayoutDashboard
-    },
-    {
         title: "Vote",
         href: "/vote",
         icon: Vote
-    },
-    {
-        title: "History",
-        href: "/history",
-        icon: History
-    },
-    {
-        title: "Profile",
-        href: "/profile",
-        icon: User
     }
 ]
 

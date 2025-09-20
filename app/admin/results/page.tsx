@@ -121,8 +121,8 @@ export default function VotingResults() {
                                 <div
                                     key={election.id}
                                     className={`p-3 border rounded-lg cursor-pointer transition-colors ${selectedElection.id === election.id
-                                            ? 'border-primary bg-primary/5'
-                                            : 'hover:bg-accent'
+                                        ? 'border-primary bg-primary/5'
+                                        : 'hover:bg-accent'
                                         }`}
                                     onClick={() => setSelectedElection(election)}
                                 >
@@ -177,6 +177,16 @@ export default function VotingResults() {
                                         >
                                             <Download className="mr-2 h-4 w-4" />
                                             Download
+                                        </Button>
+                                        <Button
+                                            variant="outline"
+                                            size="sm"
+                                            asChild
+                                        >
+                                            <a href={`/results/${selectedElection.id}`} target="_blank" rel="noopener noreferrer">
+                                                <Eye className="mr-2 h-4 w-4" />
+                                                Public View
+                                            </a>
                                         </Button>
                                     </div>
                                 </div>
@@ -258,9 +268,9 @@ export default function VotingResults() {
                                         <div className="w-full bg-gray-200 rounded-full h-2">
                                             <div
                                                 className={`h-2 rounded-full ${index === 0 ? 'bg-blue-500' :
-                                                        index === 1 ? 'bg-green-500' :
-                                                            index === 2 ? 'bg-yellow-500' :
-                                                                'bg-purple-500'
+                                                    index === 1 ? 'bg-green-500' :
+                                                        index === 2 ? 'bg-yellow-500' :
+                                                            'bg-purple-500'
                                                     }`}
                                                 style={{ width: `${candidate.percentage}%` }}
                                             />

@@ -73,22 +73,10 @@ export function Header({ userType, userName, onMenuClick, showMenuButton }: Head
                         {userType === "voter" && (
                             <>
                                 <Link
-                                    href="/dashboard"
-                                    className="text-sm font-medium transition-colors hover:text-primary"
-                                >
-                                    Dashboard
-                                </Link>
-                                <Link
                                     href="/vote"
                                     className="text-sm font-medium transition-colors hover:text-primary"
                                 >
                                     Vote
-                                </Link>
-                                <Link
-                                    href="/profile"
-                                    className="text-sm font-medium transition-colors hover:text-primary"
-                                >
-                                    Profile
                                 </Link>
                             </>
                         )}

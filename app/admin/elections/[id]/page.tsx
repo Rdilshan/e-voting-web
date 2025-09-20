@@ -20,7 +20,8 @@ import {
     Mail,
     Phone,
     Download,
-    RefreshCw
+    RefreshCw,
+    Eye
 } from "lucide-react"
 
 // Mock data for election details
@@ -129,7 +130,7 @@ export default function ElectionDetails() {
                 <div className="text-center py-12">
                     <Vote className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
                     <h1 className="text-2xl font-bold mb-2">Election Not Found</h1>
-                    <p className="text-muted-foreground mb-4">The election you're looking for doesn't exist.</p>
+                    <p className="text-muted-foreground mb-4">The election you&apos;re looking for doesn&apos;t exist.</p>
                     <Button asChild>
                         <Link href="/admin/elections">
                             <ArrowLeft className="mr-2 h-4 w-4" />
@@ -343,6 +344,12 @@ export default function ElectionDetails() {
                                         <BarChart3 className="mr-2 h-4 w-4" />
                                         View Detailed Results
                                     </Link>
+                                </Button>
+                                <Button className="w-full justify-start" variant="outline" asChild>
+                                    <a href={`/results/${election.id}`} target="_blank" rel="noopener noreferrer">
+                                        <Eye className="mr-2 h-4 w-4" />
+                                        Public Results Page
+                                    </a>
                                 </Button>
                                 <Button className="w-full justify-start" variant="outline" onClick={handleExportData}>
                                     <Download className="mr-2 h-4 w-4" />

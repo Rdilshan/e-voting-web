@@ -249,9 +249,12 @@ export default function VoterAccess() {
                                                 <div className="min-w-0 flex-1">
                                                     <h3 className="font-semibold text-sm sm:text-base truncate">{election.title}</h3>
                                                     <p className="text-xs sm:text-sm text-muted-foreground line-clamp-2">{election.description}</p>
-                                                    <p className="text-xs text-muted-foreground">
-                                                        Ends: {new Date(election.endDate).toLocaleDateString()}
-                                                    </p>
+                                                    <div className="text-xs text-muted-foreground mt-1 space-y-1">
+                                                        <p>Voting Period: {new Date(election.startDate || election.endDate).toLocaleDateString()} - {new Date(election.endDate).toLocaleDateString()}</p>
+                                                        <p className="text-blue-600 dark:text-blue-400">
+                                                            Status: {election.status === 'active' ? 'Voting Open' : election.status}
+                                                        </p>
+                                                    </div>
                                                 </div>
                                                 <div className="flex items-center justify-end sm:justify-center space-x-2 flex-shrink-0">
                                                     {voterInElection?.hasVoted ? (
@@ -287,8 +290,11 @@ export default function VoterAccess() {
                         <Card>
                             <CardHeader>
                                 <CardTitle className="text-lg sm:text-xl truncate">{selectedElection.title}</CardTitle>
-                                <CardDescription className="text-sm">
-                                    Select your preferred candidate
+                                <CardDescription className="text-sm space-y-1">
+                                    <p>Select your preferred candidate</p>
+                                    <p className="text-blue-600 dark:text-blue-400 font-medium">
+                                        Voting Period: {new Date(selectedElection.startDate || selectedElection.endDate).toLocaleDateString()} - {new Date(selectedElection.endDate).toLocaleDateString()}
+                                    </p>
                                 </CardDescription>
                             </CardHeader>
                             <CardContent className="space-y-3 sm:space-y-4">
@@ -358,9 +364,17 @@ export default function VoterAccess() {
                                     </div>
                                 </div>
 
-                                <Button onClick={resetVoting} className="w-full">
-                                    Vote in Another Election
-                                </Button>
+                                <div className="space-y-2">
+                                    <Button onClick={resetVoting} className="w-full">
+                                        Vote in Another Election
+                                    </Button>
+                                    <Button variant="outline" className="w-full" asChild>
+                                        <a href={`/results/${selectedElection.id}`} target="_blank" rel="noopener noreferrer">
+                                            <BarChart3 className="mr-2 h-4 w-4" />
+                                            View Public Results
+                                        </a>
+                                    </Button>
+                                </div>
                             </CardContent>
                         </Card>
                     )}
