@@ -15,22 +15,28 @@ import {
     Vote
 } from "lucide-react"
 import { useState } from "react"
+import { useRouter } from "next/navigation"
+import { createElection } from "./action"
 
 interface Candidate {
     id: string
     name: string
+    nic: string
     party: string
-    description: string
 }
 
 interface Voter {
     id: string
-    name: string
-    email: string
-    voterId: string
+    nic: string
 }
 
 export default function CreateElection() {
+    const router = useRouter()
+    const [isLoading, setIsLoading] = useState(false)
+    const [error, setError] = useState<string>("")
+    const [success, setSuccess] = useState<string>("")
+    const [progress, setProgress] = useState<{ step: number; message: string } | null>(null)
+
     const [electionData, setElectionData] = useState({
         title: "",
         description: "",
@@ -43,14 +49,12 @@ export default function CreateElection() {
 
     const [newCandidate, setNewCandidate] = useState({
         name: "",
-        party: "",
-        description: ""
+        nic: "",
+        party: ""
     })
 
     const [newVoter, setNewVoter] = useState({
-        name: "",
-        email: "",
-        voterId: ""
+        nic: ""
     })
 
     const handleElectionChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
@@ -61,13 +65,15 @@ export default function CreateElection() {
     }
 
     const addCandidate = () => {
-        if (newCandidate.name && newCandidate.party) {
+        if (newCandidate.name && newCandidate.nic && newCandidate.party) {
             const candidate: Candidate = {
                 id: Date.now().toString(),
-                ...newCandidate
+                name: newCandidate.name.trim(),
+                nic: newCandidate.nic.trim(),
+                party: newCandidate.party.trim(),
             }
             setCandidates(prev => [...prev, candidate])
-            setNewCandidate({ name: "", party: "", description: "" })
+            setNewCandidate({ name: "", nic: "", party: "" })
         }
     }
 
@@ -76,14 +82,13 @@ export default function CreateElection() {
     }
 
     const addVoter = () => {
-        if (newVoter.name && newVoter.email) {
+        if (newVoter.nic.trim()) {
             const voter: Voter = {
                 id: Date.now().toString(),
-                ...newVoter,
-                voterId: newVoter.voterId || `VTR-${Date.now()}`,
+                nic: newVoter.nic.trim(),
             }
             setVoters(prev => [...prev, voter])
-            setNewVoter({ name: "", email: "", voterId: "" })
+            setNewVoter({ nic: "" })
         }
     }
 
@@ -91,17 +96,103 @@ export default function CreateElection() {
         setVoters(prev => prev.filter(v => v.id !== id))
     }
 
-    const handleCreateElection = () => {
-        const election = {
-            ...electionData,
-            candidates,
-            voters,
-            createdAt: new Date().toISOString()
+    const handleCreateElection = async () => {
+        // Validate form data
+        if (!electionData.title.trim()) {
+            setError("Please enter an election title")
+            return
         }
 
-        // TODO: Save election to backend/database
-        console.log("Creating election:", election)
-        alert("Election created successfully!")
+        if (!electionData.startDate || !electionData.endDate) {
+            setError("Please select both start and end dates")
+            return
+        }
+
+        if (candidates.length === 0) {
+            setError("Please add at least one candidate")
+            return
+        }
+
+        if (voters.length === 0) {
+            setError("Please add at least one voter")
+            return
+        }
+
+        // Validate dates
+        const startDate = new Date(electionData.startDate)
+        const endDate = new Date(electionData.endDate)
+
+        if (startDate >= endDate) {
+            setError("End date must be after start date")
+            return
+        }
+
+        setIsLoading(true)
+        setError("")
+        setSuccess("")
+        setProgress({ step: 0, message: "Starting election creation process..." })
+
+        // Simulate progress updates
+        const progressSteps = [
+            { step: 1, message: `Checking ${voters.length} voter NIC(s)...` },
+            { step: 2, message: `Checking ${candidates.length} candidate NIC(s)...` },
+            { step: 3, message: "Registering NICs on blockchain..." },
+            { step: 4, message: `Creating election "${electionData.title}"...` },
+            { step: 5, message: "Waiting for transaction confirmation..." },
+            { step: 6, message: "✓ Election created successfully!" },
+        ]
+
+        let currentStep = 0
+        const progressInterval = setInterval(() => {
+            if (currentStep < progressSteps.length) {
+                setProgress(progressSteps[currentStep])
+                currentStep++
+            }
+        }, 2000)
+
+        try {
+            const result = await createElection({
+                title: electionData.title.trim(),
+                description: electionData.description.trim(),
+                startDate: electionData.startDate,
+                endDate: electionData.endDate,
+                candidates: candidates.map((c) => ({
+                    name: c.name,
+                    nic: c.nic,
+                    party: c.party,
+                })),
+                voters: voters.map((v) => ({ nic: v.nic })),
+            })
+
+            clearInterval(progressInterval)
+
+            if (result.success) {
+                setProgress({ step: 6, message: "✓ Election created successfully!" })
+                setSuccess(
+                    result.message || `Election created successfully! Election ID: ${result.electionId}`
+                )
+                // Redirect to elections page after 2 seconds
+                setTimeout(() => {
+                    router.push("/admin/elections")
+                }, 2000)
+            } else {
+                setProgress(null)
+                setError(result.message || "Failed to create election")
+                if (result.errors && result.errors.length > 0) {
+                    setError(
+                        `${result.message}\n${result.errors.join("\n")}`
+                    )
+                }
+            }
+        } catch (err: unknown) {
+            clearInterval(progressInterval)
+            console.error("Error creating election:", err)
+            setProgress(null)
+            const errorMessage = err instanceof Error ? err.message : "An unexpected error occurred"
+            setError(errorMessage)
+        } finally {
+            setIsLoading(false)
+        }
     }
 
     return (
@@ -114,11 +205,46 @@ export default function CreateElection() {
                             Set up a new voting process with candidates and authorized voters
                         </p>
                     </div>
-                    <Button variant="outline" onClick={() => window.history.back()}>
+                    <Button variant="outline" onClick={() => router.push("/admin/elections")}>
                         <ArrowLeft className="mr-2 h-4 w-4" />
                         Back
                     </Button>
                 </div>
+
+                {/* Error Message */}
+                {error && (
+                    <div className="p-4 text-sm text-red-600 bg-red-50 border border-red-200 rounded-md">
+                        <div className="font-medium mb-1">Error</div>
+                        <div className="whitespace-pre-line">{error}</div>
+                    </div>
+                )}
+
+                {/* Success Message */}
+                {success && (
+                    <div className="p-4 text-sm text-green-600 bg-green-50 border border-green-200 rounded-md">
+                        <div className="font-medium mb-1">Success</div>
+                        <div>{success}</div>
+                    </div>
+                )}
+
+                {/* Progress Indicator */}
+                {isLoading && progress && (
+                    <div className="p-4 text-sm bg-blue-50 border border-blue-200 rounded-md">
+                        <div className="font-medium mb-2 text-blue-800">Progress</div>
+                        <div className="space-y-2">
+                            <div className="flex items-center space-x-2">
+                                <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse" />
+                                <span className="text-blue-700">{progress.message}</span>
+                            </div>
+                            <div className="w-full bg-blue-200 rounded-full h-2">
+                                <div
+                                    className="bg-blue-500 h-2 rounded-full transition-all duration-300"
+                                    style={{ width: `${(progress.step / 6) * 100}%` }}
+                                />
+                            </div>
+                        </div>
+                    </div>
+                )}
 
                 <div className="grid gap-6 lg:grid-cols-2">
                     {/* Election Details */}
@@ -195,22 +321,26 @@ export default function CreateElection() {
                             </CardHeader>
                             <CardContent className="space-y-4">
                                 <div className="grid gap-3">
-                                    <div className="grid grid-cols-2 gap-2">
-                                        <Input
-                                            placeholder="Candidate Name"
-                                            value={newCandidate.name}
-                                            onChange={(e) => setNewCandidate(prev => ({ ...prev, name: e.target.value }))}
-                                        />
-                                        <Input
-                                            placeholder="Party/Affiliation"
-                                            value={newCandidate.party}
-                                            onChange={(e) => setNewCandidate(prev => ({ ...prev, party: e.target.value }))}
-                                        />
-                                    </div>
                                     <Input
-                                        placeholder="Description (optional)"
-                                        value={newCandidate.description}
-                                        onChange={(e) => setNewCandidate(prev => ({ ...prev, description: e.target.value }))}
+                                        placeholder="Candidate Name"
+                                        value={newCandidate.name}
+                                        onChange={(e) => setNewCandidate(prev => ({ ...prev, name: e.target.value }))}
+                                    />
+                                    <Input
+                                        placeholder="NIC Number"
+                                        value={newCandidate.nic}
+                                        onChange={(e) => setNewCandidate(prev => ({ ...prev, nic: e.target.value }))}
+                                    />
+                                    <Input
+                                        placeholder="Party/Affiliation"
+                                        value={newCandidate.party}
+                                        onChange={(e) => setNewCandidate(prev => ({ ...prev, party: e.target.value }))}
+                                        onKeyDown={(e) => {
+                                            if (e.key === "Enter") {
+                                                e.preventDefault()
+                                                addCandidate()
+                                            }
+                                        }}
                                     />
                                     <Button onClick={addCandidate} className="w-full">
                                         <Plus className="mr-2 h-4 w-4" />
@@ -225,10 +355,8 @@ export default function CreateElection() {
                                             <div key={candidate.id} className="flex items-center justify-between p-3 border rounded-lg">
                                                 <div>
                                                     <p className="font-medium">{candidate.name}</p>
+                                                    <p className="text-sm text-muted-foreground">NIC: {candidate.nic}</p>
                                                     <p className="text-sm text-muted-foreground">{candidate.party}</p>
-                                                    {candidate.description && (
-                                                        <p className="text-xs text-muted-foreground">{candidate.description}</p>
-                                                    )}
                                                 </div>
                                                 <Button
                                                     variant="ghost"
@@ -260,20 +388,15 @@ export default function CreateElection() {
                             <CardContent className="space-y-4">
                                 <div className="grid gap-3">
                                     <Input
-                                        placeholder="Voter Name"
-                                        value={newVoter.name}
-                                        onChange={(e) => setNewVoter(prev => ({ ...prev, name: e.target.value }))}
-                                    />
-                                    <Input
-                                        placeholder="Email Address"
-                                        type="email"
-                                        value={newVoter.email}
-                                        onChange={(e) => setNewVoter(prev => ({ ...prev, email: e.target.value }))}
-                                    />
-                                    <Input
-                                        placeholder="Voter ID (optional - auto-generated)"
-                                        value={newVoter.voterId}
-                                        onChange={(e) => setNewVoter(prev => ({ ...prev, voterId: e.target.value }))}
+                                        placeholder="NIC Number"
+                                        value={newVoter.nic}
+                                        onChange={(e) => setNewVoter(prev => ({ ...prev, nic: e.target.value }))}
+                                        onKeyDown={(e) => {
+                                            if (e.key === "Enter") {
+                                                e.preventDefault()
+                                                addVoter()
+                                            }
+                                        }}
                                     />
                                     <Button onClick={addVoter} className="w-full">
                                         <Plus className="mr-2 h-4 w-4" />
@@ -288,9 +411,7 @@ export default function CreateElection() {
                                             {voters.map((voter) => (
                                                 <div key={voter.id} className="flex items-center justify-between p-3 border rounded-lg">
                                                     <div>
-                                                        <p className="font-medium">{voter.name}</p>
-                                                        <p className="text-sm text-muted-foreground">{voter.email}</p>
-                                                        <p className="text-xs text-muted-foreground">ID: {voter.voterId}</p>
+                                                        <p className="font-medium">{voter.nic}</p>
                                                     </div>
                                                     <Button
                                                         variant="ghost"
@@ -323,10 +444,17 @@ export default function CreateElection() {
                                     <Button
                                         onClick={handleCreateElection}
                                         className="w-full"
-                                        disabled={!electionData.title || candidates.length === 0 || voters.length === 0}
+                                        disabled={
+                                            isLoading ||
+                                            !electionData.title ||
+                                            candidates.length === 0 ||
+                                            voters.length === 0 ||
+                                            !electionData.startDate ||
+                                            !electionData.endDate
+                                        }
                                     >
                                         <Save className="mr-2 h-4 w-4" />
-                                        Create Election
+                                        {isLoading ? "Creating Election..." : "Create Election"}
                                     </Button>
                                 </div>
                             </CardContent>
