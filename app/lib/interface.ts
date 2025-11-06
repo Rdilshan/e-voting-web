@@ -125,3 +125,47 @@ export interface AdminElectionData {
 	endDate: number;
 	candidates: ElectionCandidate[];
 }
+
+// Admin elections list page interface
+export interface ElectionListData {
+	id: number;
+	title: string;
+	description: string;
+	status: "active" | "completed" | "upcoming";
+	startDate: number;
+	endDate: number;
+	totalCandidates: number;
+	totalVoters: number;
+	totalVotes: number;
+	turnout: number;
+}
+
+// Admin election details page interfaces
+export interface ElectionDetailsCandidate {
+	id: number;
+	name: string;
+	nic: string;
+	party: string;
+	votes: number;
+	percentage: number;
+}
+
+export interface ElectionDetailsVoter {
+	nic: string;
+	hasVoted: boolean;
+	candidateIndex?: number;
+}
+
+export interface ElectionDetailsData {
+	id: number;
+	title: string;
+	description: string;
+	status: "active" | "completed" | "upcoming";
+	startDate: number;
+	endDate: number;
+	totalVotes: number;
+	totalVoters: number;
+	turnout: number;
+	candidates: ElectionDetailsCandidate[];
+	voters: ElectionDetailsVoter[];
+}

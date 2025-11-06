@@ -33,16 +33,6 @@ const adminNavItems = [
         icon: Vote
     },
     {
-        title: "Candidates",
-        href: "/admin/candidates",
-        icon: Users
-    },
-    {
-        title: "Voters",
-        href: "/admin/voters",
-        icon: UserCheck
-    },
-    {
         title: "Results",
         href: "/admin/results",
         icon: BarChart3
