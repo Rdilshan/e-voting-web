@@ -37,36 +37,7 @@ export function Header({ userType, userName, onMenuClick, showMenuButton }: Head
                     <nav className={`hidden items-center space-x-4 ${showMenuButton ? 'lg:flex' : 'md:flex'}`}>
                         {userType === "admin" && (
                             <>
-                                <Link
-                                    href="/admin/dashboard"
-                                    className="text-sm font-medium transition-colors hover:text-primary"
-                                >
-                                    Dashboard
-                                </Link>
-                                <Link
-                                    href="/admin/elections"
-                                    className="text-sm font-medium transition-colors hover:text-primary"
-                                >
-                                    Elections
-                                </Link>
-                                <Link
-                                    href="/admin/candidates"
-                                    className="text-sm font-medium transition-colors hover:text-primary"
-                                >
-                                    Candidates
-                                </Link>
-                                <Link
-                                    href="/admin/voters"
-                                    className="text-sm font-medium transition-colors hover:text-primary"
-                                >
-                                    Voters
-                                </Link>
-                                <Link
-                                    href="/admin/results"
-                                    className="text-sm font-medium transition-colors hover:text-primary"
-                                >
-                                    Results
-                                </Link>
+
                             </>
                         )}
 
