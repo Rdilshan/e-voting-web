@@ -33,7 +33,7 @@ export default function Home() {
             </CardHeader>
             <CardContent>
               <Button className="w-full" asChild>
-                <Link href="/admin/login">Admin Login</Link>
+                <Link href="/admin/dashboard">Admin Login</Link>
               </Button>
             </CardContent>
           </Card>
