@@ -58,3 +58,49 @@ export interface ElectionsByVoterNICResponse {
 	voters: ContractVoter[];
 	candidates: ContractCandidate[][]; // Array of candidate arrays, one per election
 }
+
+// Types for contract data arrays (from getElectionData)
+export type ElectionDataArray = [
+	string,
+	string,
+	bigint,
+	bigint,
+	bigint,
+	boolean
+];
+export type CandidateDataArray = [string, string, string, bigint];
+
+// Response type for getElectionResults action
+export interface ElectionResultsResponse {
+	success: boolean;
+	results?: [ElectionDataArray, CandidateDataArray[], bigint];
+	error?: string;
+}
+
+// Transformed candidate data for display
+export interface TransformedCandidate {
+	id: number;
+	name: string;
+	nic: string;
+	party: string;
+	votes: number;
+	percentage: number;
+}
+
+// Transformed election data for display (used in results page)
+export interface TransformedElectionData {
+	id: number;
+	title: string;
+	description: string;
+	status: "active" | "completed" | "upcoming";
+	startDate: string;
+	endDate: string;
+	totalVotes: number;
+	totalEligibleVoters: number;
+	candidates: TransformedCandidate[];
+}
+
+// Props for PublicElectionResults component
+export interface PublicElectionResultsProps {
+	electionData: TransformedElectionData | null;
+}
