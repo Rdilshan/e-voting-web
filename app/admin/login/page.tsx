@@ -1,6 +1,7 @@
 "use client"
 
 import { useState } from "react"
+import { useRouter, useSearchParams } from "next/navigation"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -8,18 +9,51 @@ import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { MainLayout } from "@/components/layout/main-layout"
 import { Shield, Eye, EyeOff } from "lucide-react"
+import { signIn } from "next-auth/react"
 
 export default function AdminLogin() {
+    const router = useRouter()
+    const searchParams = useSearchParams()
     const [showPassword, setShowPassword] = useState(false)
+    const [isLoading, setIsLoading] = useState(false)
+    const [error, setError] = useState<string>("")
     const [formData, setFormData] = useState({
         email: "",
         password: ""
     })
 
-    const handleSubmit = (e: React.FormEvent) => {
+    // Get callbackUrl from query params
+    const callbackUrl = searchParams.get("callbackUrl") || "/admin/dashboard"
+
+    const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault()
-        // TODO: Implement admin login logic
-        console.log("Admin login:", formData)
+        setIsLoading(true)
+        setError("")
+
+        try {
+            const result = await signIn("credentials", {
+                email: formData.email,
+                password: formData.password,
+                redirect: false,
+            })
+
+            if (result?.error) {
+                setError("Invalid email or password. Please try again.")
+            } else if (result?.ok) {
+                // Redirect to callbackUrl or dashboard on successful login
+                // Ensure callbackUrl is safe (not pointing back to login)
+                const redirectUrl = callbackUrl && !callbackUrl.includes("/admin/login")
+                    ? callbackUrl
+                    : "/admin/dashboard"
+                router.push(redirectUrl)
+                router.refresh()
+            }
+        } catch (error) {
+            setError("An error occurred during login. Please try again.")
+            console.error("Login error:", error)
+        } finally {
+            setIsLoading(false)
+        }
     }
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -44,6 +78,11 @@ export default function AdminLogin() {
                     </CardHeader>
                     <CardContent>
                         <form onSubmit={handleSubmit} className="space-y-4">
+                            {error && (
+                                <div className="p-3 text-sm text-red-600 bg-red-50 border border-red-200 rounded-md">
+                                    {error}
+                                </div>
+                            )}
                             <div className="space-y-2">
                                 <Label htmlFor="email">Email</Label>
                                 <Input
@@ -54,6 +93,7 @@ export default function AdminLogin() {
                                     value={formData.email}
                                     onChange={handleChange}
                                     required
+                                    disabled={isLoading}
                                 />
                             </div>
                             <div className="space-y-2">
@@ -67,6 +107,7 @@ export default function AdminLogin() {
                                         value={formData.password}
                                         onChange={handleChange}
                                         required
+                                        disabled={isLoading}
                                     />
                                     <Button
                                         type="button"
@@ -91,8 +132,8 @@ export default function AdminLogin() {
                                     Forgot password?
                                 </Link>
                             </div>
-                            <Button type="submit" className="w-full">
-                                Sign In
+                            <Button type="submit" className="w-full" disabled={isLoading}>
+                                {isLoading ? "Signing in..." : "Sign In"}
                             </Button>
                         </form>
                         <div className="mt-6 text-center text-sm">
