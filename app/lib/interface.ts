@@ -104,3 +104,24 @@ export interface TransformedElectionData {
 export interface PublicElectionResultsProps {
 	electionData: TransformedElectionData | null;
 }
+
+// Admin results page interfaces
+export interface ElectionCandidate {
+	id: number;
+	name: string;
+	party: string;
+	votes: number;
+	percentage: number;
+}
+
+export interface AdminElectionData {
+	id: number;
+	title: string;
+	description: string;
+	status: "active" | "completed" | "upcoming";
+	totalVoters: number;
+	totalVotes: number;
+	turnout: number;
+	endDate: number;
+	candidates: ElectionCandidate[];
+}
