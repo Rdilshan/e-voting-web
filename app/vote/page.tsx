@@ -15,6 +15,7 @@ import {
     ArrowRight,
     BarChart3
 } from "lucide-react"
+import Link from "next/link"
 import { Candidate, AuthorizedVoter, Election, VotingStep, ContractCandidate } from "@/app/lib/interface"
 import { castVoteAction, createSessionForUser, getElectionDataAction, voterLoginAction } from "./action"
 import { ethers } from "ethers"
@@ -418,12 +419,26 @@ export default function VoterAccess() {
                                                             </p>
                                                         </div>
                                                     </div>
-                                                    <div className="flex items-center justify-end sm:justify-center space-x-2 flex-shrink-0">
+                                                    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-end sm:justify-center gap-2 flex-shrink-0">
                                                         {hasVoted ? (
-                                                            <div className="flex items-center space-x-1 text-green-600">
-                                                                <CheckCircle className="h-4 w-4" />
-                                                                <span className="text-sm">Voted</span>
-                                                            </div>
+                                                            <>
+                                                                <div className="flex items-center space-x-1 text-green-600">
+                                                                    <CheckCircle className="h-4 w-4" />
+                                                                    <span className="text-sm">Voted</span>
+                                                                </div>
+                                                                <Button
+                                                                    size="sm"
+                                                                    variant="outline"
+                                                                    className="w-full sm:w-auto"
+                                                                    asChild
+                                                                    onClick={(e) => e.stopPropagation()}
+                                                                >
+                                                                    <Link href={`/results/${election.id}`}>
+                                                                        <BarChart3 className="mr-2 h-4 w-4" />
+                                                                        View Results
+                                                                    </Link>
+                                                                </Button>
+                                                            </>
                                                         ) : isActive ? (
                                                             <ArrowRight className="h-4 w-4 text-muted-foreground" />
                                                         ) : (
