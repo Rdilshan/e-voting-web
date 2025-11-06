@@ -1,21 +1,20 @@
 "use client"
 
-import { useState } from "react"
+import { MainLayout } from "@/components/layout/main-layout"
 import { Button } from "@/components/ui/button"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { MainLayout } from "@/components/layout/main-layout"
 import {
-    Vote,
+    ArrowLeft,
     Plus,
+    Save,
     Trash2,
     User,
     Users,
-    Calendar,
-    Save,
-    ArrowLeft
+    Vote
 } from "lucide-react"
+import { useState } from "react"
 
 interface Candidate {
     id: string
@@ -80,8 +79,8 @@ export default function CreateElection() {
         if (newVoter.name && newVoter.email) {
             const voter: Voter = {
                 id: Date.now().toString(),
+                ...newVoter,
                 voterId: newVoter.voterId || `VTR-${Date.now()}`,
-                ...newVoter
             }
             setVoters(prev => [...prev, voter])
             setNewVoter({ name: "", email: "", voterId: "" })

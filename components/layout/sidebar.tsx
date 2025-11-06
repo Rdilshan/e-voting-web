@@ -1,20 +1,15 @@
 "use client"
 
-import Link from "next/link"
-import { usePathname } from "next/navigation"
-import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
+import { cn } from "@/lib/utils"
 import {
+    BarChart3,
     LayoutDashboard,
     Vote,
-    Users,
-    UserCheck,
-    BarChart3,
-    Settings,
-    User,
-    History,
     X
 } from "lucide-react"
+import Link from "next/link"
+import { usePathname } from "next/navigation"
 
 interface SidebarProps {
     userType: "admin" | "voter"

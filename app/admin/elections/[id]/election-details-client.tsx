@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
-import Link from "next/link";
+import {
+	ElectionDetailsData
+} from "@/app/lib/interface";
+import { MainLayout } from "@/components/layout/main-layout";
 import { Button } from "@/components/ui/button";
 import {
 	Card,
@@ -11,24 +12,22 @@ import {
 	CardHeader,
 	CardTitle,
 } from "@/components/ui/card";
-import { MainLayout } from "@/components/layout/main-layout";
 import {
-	Vote,
-	Users,
-	UserCheck,
-	BarChart3,
-	Trash2,
 	ArrowLeft,
+	BarChart3,
 	CheckCircle,
 	Clock,
 	Download,
-	RefreshCw,
 	Eye,
+	RefreshCw,
+	Trash2,
+	UserCheck,
+	Users,
+	Vote,
 } from "lucide-react";
-import {
-	ElectionDetailsData,
-	ElectionDetailsCandidate,
-} from "@/app/lib/interface";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useState } from "react";
 
 interface ElectionDetailsClientProps {
 	electionData: ElectionDetailsData | null;
@@ -259,21 +258,19 @@ export default function ElectionDetailsClient({
 					<nav className="flex space-x-4 sm:space-x-8 overflow-x-auto">
 						<button
 							onClick={() => setActiveTab("overview")}
-							className={`py-2 px-1 border-b-2 font-medium text-xs sm:text-sm whitespace-nowrap ${
-								activeTab === "overview"
+							className={`py-2 px-1 border-b-2 font-medium text-xs sm:text-sm whitespace-nowrap ${activeTab === "overview"
 									? "border-primary text-primary"
 									: "border-transparent text-muted-foreground hover:text-foreground hover:border-gray-300"
-							}`}
+								}`}
 						>
 							Overview
 						</button>
 						<button
 							onClick={() => setActiveTab("candidates")}
-							className={`py-2 px-1 border-b-2 font-medium text-xs sm:text-sm whitespace-nowrap ${
-								activeTab === "candidates"
+							className={`py-2 px-1 border-b-2 font-medium text-xs sm:text-sm whitespace-nowrap ${activeTab === "candidates"
 									? "border-primary text-primary"
 									: "border-transparent text-muted-foreground hover:text-foreground hover:border-gray-300"
-							}`}
+								}`}
 						>
 							<span className="hidden sm:inline">
 								Candidates ({election.candidates.length})
@@ -282,11 +279,10 @@ export default function ElectionDetailsClient({
 						</button>
 						<button
 							onClick={() => setActiveTab("voters")}
-							className={`py-2 px-1 border-b-2 font-medium text-xs sm:text-sm whitespace-nowrap ${
-								activeTab === "voters"
+							className={`py-2 px-1 border-b-2 font-medium text-xs sm:text-sm whitespace-nowrap ${activeTab === "voters"
 									? "border-primary text-primary"
 									: "border-transparent text-muted-foreground hover:text-foreground hover:border-gray-300"
-							}`}
+								}`}
 						>
 							<span className="hidden sm:inline">
 								Voters ({election.totalVoters})
@@ -295,11 +291,10 @@ export default function ElectionDetailsClient({
 						</button>
 						<button
 							onClick={() => setActiveTab("results")}
-							className={`py-2 px-1 border-b-2 font-medium text-xs sm:text-sm whitespace-nowrap ${
-								activeTab === "results"
+							className={`py-2 px-1 border-b-2 font-medium text-xs sm:text-sm whitespace-nowrap ${activeTab === "results"
 									? "border-primary text-primary"
 									: "border-transparent text-muted-foreground hover:text-foreground hover:border-gray-300"
-							}`}
+								}`}
 						>
 							Results
 						</button>
@@ -419,13 +414,12 @@ export default function ElectionDetailsClient({
 												</div>
 												<div className="w-full sm:w-24 bg-gray-200 rounded-full h-2 mt-2">
 													<div
-														className={`h-2 rounded-full ${
-															index === 0
+														className={`h-2 rounded-full ${index === 0
 																? "bg-blue-500"
 																: index === 1
-																? "bg-green-500"
-																: "bg-yellow-500"
-														}`}
+																	? "bg-green-500"
+																	: "bg-yellow-500"
+															}`}
 														style={{ width: `${candidate.percentage}%` }}
 													/>
 												</div>
@@ -539,13 +533,12 @@ export default function ElectionDetailsClient({
 											</div>
 											<div className="w-full bg-gray-200 rounded-full h-2 sm:h-3">
 												<div
-													className={`h-2 sm:h-3 rounded-full transition-all duration-300 ${
-														index === 0
+													className={`h-2 sm:h-3 rounded-full transition-all duration-300 ${index === 0
 															? "bg-blue-500"
 															: index === 1
-															? "bg-green-500"
-															: "bg-yellow-500"
-													}`}
+																? "bg-green-500"
+																: "bg-yellow-500"
+														}`}
 													style={{ width: `${candidate.percentage}%` }}
 												/>
 											</div>

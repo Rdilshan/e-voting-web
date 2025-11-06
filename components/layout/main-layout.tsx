@@ -25,7 +25,7 @@ export function MainLayout({
                 userType={userType}
                 userName={userName}
                 onMenuClick={() => setSidebarOpen(!sidebarOpen)}
-                showMenuButton={showSidebar && userType}
+                showMenuButton={!!(showSidebar && userType)}
             />
             <div className="flex">
                 {showSidebar && userType && (

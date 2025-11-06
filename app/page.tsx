@@ -1,8 +1,8 @@
-import Link from "next/link"
+import { MainLayout } from "@/components/layout/main-layout"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { MainLayout } from "@/components/layout/main-layout"
-import { Vote, Shield, Users, BarChart3, Lock, CheckCircle } from "lucide-react"
+import { BarChart3, Shield, Users, Vote } from "lucide-react"
+import Link from "next/link"
 
 export default function Home() {
   return (
@@ -43,7 +43,7 @@ export default function Home() {
               <Vote className="h-10 w-10 sm:h-12 sm:w-12 text-primary mb-4" />
               <CardTitle className="text-lg sm:text-xl">Voter Access</CardTitle>
               <CardDescription className="text-sm sm:text-base">
-                Vote in elections you've been authorized to participate in
+                Vote in elections you&apos;ve been authorized to participate in
               </CardDescription>
             </CardHeader>
             <CardContent>

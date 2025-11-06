@@ -1,10 +1,8 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
-import Link from "next/link";
+import { ElectionListData } from "@/app/lib/interface";
+import { MainLayout } from "@/components/layout/main-layout";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import {
 	Card,
 	CardContent,
@@ -12,18 +10,19 @@ import {
 	CardHeader,
 	CardTitle,
 } from "@/components/ui/card";
-import { MainLayout } from "@/components/layout/main-layout";
+import { Input } from "@/components/ui/input";
 import {
-	Vote,
-	Plus,
-	Search,
-	Trash2,
-	Eye,
+	ArrowLeft,
 	CheckCircle,
 	Clock,
-	ArrowLeft,
+	Eye,
+	Plus,
+	Search,
+	Vote
 } from "lucide-react";
-import { ElectionListData } from "@/app/lib/interface";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useState } from "react";
 
 interface ElectionsClientProps {
 	electionsData: ElectionListData[] | null;

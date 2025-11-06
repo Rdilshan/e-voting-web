@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, Suspense } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
@@ -11,7 +11,7 @@ import { MainLayout } from "@/components/layout/main-layout"
 import { Shield, Eye, EyeOff } from "lucide-react"
 import { signIn } from "next-auth/react"
 
-export default function AdminLogin() {
+function AdminLoginForm() {
     const router = useRouter()
     const searchParams = useSearchParams()
     const [showPassword, setShowPassword] = useState(false)
@@ -145,6 +145,30 @@ export default function AdminLogin() {
                 </Card>
             </div>
         </MainLayout>
+    )
+}
+
+export default function AdminLogin() {
+    return (
+        <Suspense fallback={
+            <MainLayout>
+                <div className="flex min-h-[calc(100vh-8rem)] items-center justify-center">
+                    <Card className="w-full max-w-md">
+                        <CardHeader className="space-y-1">
+                            <div className="flex items-center justify-center mb-4">
+                                <Shield className="h-12 w-12 text-primary" />
+                            </div>
+                            <CardTitle className="text-2xl text-center">Admin Login</CardTitle>
+                            <CardDescription className="text-center">
+                                Loading...
+                            </CardDescription>
+                        </CardHeader>
+                    </Card>
+                </div>
+            </MainLayout>
+        }>
+            <AdminLoginForm />
+        </Suspense>
     )
 }
 

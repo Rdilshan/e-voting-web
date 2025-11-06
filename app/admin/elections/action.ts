@@ -1,9 +1,9 @@
 "use server";
 
-import { ethers } from "ethers";
+import {retryWithBackoff} from "@/app/lib/helper";
+import {ElectionListData} from "@/app/lib/interface";
+import {ethers} from "ethers";
 import ElectionContract from "../../smartContract/Election.json";
-import { retryWithBackoff } from "@/app/lib/helper";
-import { CandidateDataArray, ElectionListData } from "@/app/lib/interface";
 
 export async function getAllElections(): Promise<{
 	success: boolean;
@@ -82,9 +82,7 @@ export async function getAllElections(): Promise<{
 
 				// Calculate turnout
 				const turnout =
-					eligibleVotersCount > 0
-						? (votes / eligibleVotersCount) * 100
-						: 0;
+					eligibleVotersCount > 0 ? (votes / eligibleVotersCount) * 100 : 0;
 
 				elections.push({
 					id: electionId,
