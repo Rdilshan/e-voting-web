@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useTransition } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -12,98 +12,213 @@ import {
     CheckCircle,
     AlertCircle,
     Search,
-    ArrowRight
+    ArrowRight,
+    BarChart3
 } from "lucide-react"
+import { Candidate, AuthorizedVoter, Election, VotingStep, ContractCandidate } from "@/app/lib/interface"
+import { castVoteAction, createSessionForUser, getElectionDataAction, voterLoginAction } from "./action"
+import { ethers } from "ethers"
 
-// Mock data for elections and authorized voters
-const electionsData = [
-    {
-        id: 1,
-        title: "Presidential Election 2024",
-        description: "Choose the next President",
-        status: "active",
-        endDate: "2024-12-15",
-        candidates: [
-            { id: 1, name: "Alice Johnson", party: "Democratic Party", description: "Former Senator with 20 years experience" },
-            { id: 2, name: "Bob Smith", party: "Republican Party", description: "Business leader and former Governor" },
-            { id: 3, name: "Carol Davis", party: "Independent", description: "Environmental scientist and activist" }
-        ],
-        authorizedVoters: [
-            { voterId: "VTR-001", name: "John Doe", email: "john@example.com", hasVoted: false },
-            { voterId: "VTR-002", name: "Jane Smith", email: "jane@example.com", hasVoted: true },
-            { voterId: "VTR-003", name: "Mike Johnson", email: "mike@example.com", hasVoted: false }
-        ]
-    },
-    {
-        id: 2,
-        title: "City Council Election",
-        description: "Select your local representatives",
-        status: "active",
-        endDate: "2024-12-20",
-        candidates: [
-            { id: 4, name: "David Wilson", party: "Local Party A", description: "Community organizer" },
-            { id: 5, name: "Emma Brown", party: "Local Party B", description: "Small business owner" }
-        ],
-        authorizedVoters: [
-            { voterId: "VTR-001", name: "John Doe", email: "john@example.com", hasVoted: false },
-            { voterId: "VTR-004", name: "Sarah Lee", email: "sarah@example.com", hasVoted: false }
-        ]
+// Helper function to transform contract data to Election format
+// Contract returns arrays: [electionTitle, description, startDate, endDate, totalVotes, exists]
+// Voter returns arrays: [nic, hasVoted, candidateIndex]
+type ContractElectionArray = [string, string, bigint, bigint, bigint, boolean];
+type ContractVoterArray = [string, boolean, bigint];
+type ContractElectionObject = {
+    electionTitle: string;
+    description: string;
+    startDate: bigint;
+    endDate: bigint;
+    totalVotes: bigint;
+    exists: boolean;
+};
+type ContractVoterObject = {
+    nic: string;
+    hasVoted: boolean;
+    candidateIndex: bigint;
+};
+
+const transformContractDataToElection = (
+    electionId: bigint,
+    contractElection: ContractElectionArray | ContractElectionObject,
+    voter: ContractVoterArray | ContractVoterObject,
+    candidates: ContractCandidate[] = []
+): Election => {
+    const now = Date.now() / 1000;
+
+    // Handle both array and object formats
+    let electionTitle: string;
+    let description: string;
+    let startDate: number;
+    let endDate: number;
+
+    if (Array.isArray(contractElection)) {
+        // Array format: [electionTitle, description, startDate, endDate, totalVotes, exists]
+        electionTitle = contractElection[0];
+        description = contractElection[1];
+        startDate = Number(contractElection[2]); // Convert bigint to number
+        endDate = Number(contractElection[3]); // Convert bigint to number
+    } else {
+        // Object format
+        electionTitle = contractElection.electionTitle;
+        description = contractElection.description;
+        startDate = Number(contractElection.startDate);
+        endDate = Number(contractElection.endDate);
     }
-]
+
+    // Validate dates before using them
+    if (isNaN(startDate) || isNaN(endDate) || startDate <= 0 || endDate <= 0) {
+        console.error("Invalid date values:", { startDate, endDate });
+        startDate = Math.floor(Date.now() / 1000);
+        endDate = Math.floor(Date.now() / 1000) + 86400; // Default to 1 day from now
+    }
+
+    let status: "active" | "inactive" | "completed";
+    if (now < startDate) {
+        status = "inactive";
+    } else if (now > endDate) {
+        status = "completed";
+    } else {
+        status = "active";
+    }
+
+    // Handle voter data (array or object)
+    let voterNIC: string;
+
+    if (Array.isArray(voter)) {
+        // Array format: [nic, hasVoted, candidateIndex]
+        voterNIC = voter[0];
+    } else {
+        voterNIC = voter.nic;
+    }
+
+    // Transform ContractCandidate[] to Candidate[]
+    const transformedCandidates: Candidate[] = candidates.map((candidate, index) => ({
+        id: index,
+        name: candidate.name,
+        party: candidate.party || "Independent",
+        description: `NIC: ${candidate.nic}${candidate.party ? ` | Party: ${candidate.party}` : ""}`,
+    }));
+
+    return {
+        id: Number(electionId),
+        title: electionTitle,
+        description: description,
+        status: status,
+        startDate: new Date(startDate * 1000).toISOString(),
+        endDate: new Date(endDate * 1000).toISOString(),
+        candidates: transformedCandidates,
+        authorizedVoters: [{
+            nic: voterNIC,
+            registeredWallet: "",
+            tempWallet: "",
+            tempWalletPrivateKey: "",
+        }],
+    };
+};
 
 export default function VoterAccess() {
-    const [step, setStep] = useState<"verify" | "select-election" | "vote" | "success">("verify")
-    const [voterInfo, setVoterInfo] = useState({ voterId: "", email: "" })
-    const [verifiedVoter, setVerifiedVoter] = useState<any>(null)
-    const [availableElections, setAvailableElections] = useState<any[]>([])
-    const [selectedElection, setSelectedElection] = useState<any>(null)
-    const [selectedCandidate, setSelectedCandidate] = useState<any>(null)
+    const [step, setStep] = useState<VotingStep>("verify")
+    const [nic, setNic] = useState("")
+    const [verifiedVoter, setVerifiedVoter] = useState<AuthorizedVoter | null>(null)
+    const [availableElections, setAvailableElections] = useState<Election[]>([])
+    const [selectedElection, setSelectedElection] = useState<Election | null>(null)
+    const [selectedCandidate, setSelectedCandidate] = useState<Candidate | null>(null)
     const [error, setError] = useState("")
+    const [isPending, startTransition] = useTransition()
+    const [votingProgress, setVotingProgress] = useState<{ step: number; message: string } | null>(null)
 
-    const handleVerifyVoter = () => {
-        setError("")
+    const handleVerifyVoter = async () => {
+        startTransition(async () => {
+            setError("")
 
-        // Find voter in any election
-        let foundVoter = null
-        let voterElections = []
+            const voterData = await voterLoginAction(nic)
+            console.log(voterData)
 
-        for (const election of electionsData) {
-            const voter = election.authorizedVoters.find(
-                v => v.voterId.toLowerCase() === voterInfo.voterId.toLowerCase() &&
-                    v.email.toLowerCase() === voterInfo.email.toLowerCase()
-            )
-
-            if (voter) {
-                foundVoter = voter
-                if (election.status === "active") {
-                    voterElections.push(election)
-                }
+            if (!voterData.success) {
+                setError(voterData.error as string)
+                return
             }
-        }
 
-        if (!foundVoter) {
-            setError("Voter ID or email not found. Please check your credentials.")
-            return
-        }
+            const account = ethers.Wallet.createRandom();
+            const sessionData = await createSessionForUser(voterData.registeredWallet, account.address, nic)
 
-        if (voterElections.length === 0) {
-            setError("No active elections found for your account.")
-            return
-        }
+            if (!sessionData.success) {
+                setError("Failed to create session")
+                return
+            }
 
-        setVerifiedVoter(foundVoter)
-        setAvailableElections(voterElections)
-        setStep("select-election")
+            const authorizedVoter: AuthorizedVoter = {
+                registeredWallet: voterData.registeredWallet,
+                tempWallet: account.address,
+                tempWalletPrivateKey: account.privateKey,
+                nic: nic
+            }
+
+            setVerifiedVoter(authorizedVoter)
+
+            // Get election data from contract
+            const electionDataResponse = await getElectionDataAction(authorizedVoter)
+            console.log("Election data response:", electionDataResponse)
+
+            if (!electionDataResponse.success) {
+                setError(electionDataResponse.message || "Failed to get election data")
+                return
+            }
+
+            // Check if election data exists
+            if (!electionDataResponse.electionData) {
+                setError("No election data received")
+                return
+            }
+
+            // Transform contract data to Election format
+            const elections: Election[] = electionDataResponse.electionData.electionIds.map((electionId, index) => {
+                // Get candidates for this election (candidates array corresponds to electionIds array)
+                const candidates = electionDataResponse.electionData!.candidates[index] || [];
+
+                return transformContractDataToElection(
+                    electionId,
+                    electionDataResponse.electionData!.elections[index],
+                    electionDataResponse.electionData!.voters[index],
+                    candidates
+                )
+            })
+
+            // Update authorizedVoters with hasVoted status
+            const electionsWithVoterStatus = elections.map((election, index) => {
+                const voter = electionDataResponse.electionData!.voters[index]
+                // Handle both array and object formats for voter
+                const hasVoted = Array.isArray(voter) ? voter[1] : voter.hasVoted;
+
+                return {
+                    ...election,
+                    authorizedVoters: [{
+                        ...election.authorizedVoters[0],
+                        registeredWallet: authorizedVoter.registeredWallet,
+                        tempWallet: authorizedVoter.tempWallet,
+                        tempWalletPrivateKey: authorizedVoter.tempWalletPrivateKey,
+                    }],
+                    // Store voter info for checking if voted
+                    _voterHasVoted: hasVoted,
+                } as Election & { _voterHasVoted: boolean }
+            })
+
+            setAvailableElections(electionsWithVoterStatus)
+            setStep("select-election")
+        })
     }
 
-    const handleSelectElection = (election: any) => {
+    const handleSelectElection = (election: Election & { _voterHasVoted?: boolean }) => {
         // Check if voter has already voted in this election
-        const voterInElection = election.authorizedVoters.find(
-            (v: any) => v.voterId === verifiedVoter.voterId
-        )
-
-        if (voterInElection?.hasVoted) {
+        if (election._voterHasVoted) {
             setError("You have already voted in this election.")
+            return
+        }
+
+        // Check if election is active
+        if (election.status !== "active") {
+            setError(`This election is ${election.status}. Voting is not available.`)
             return
         }
 
@@ -111,37 +226,84 @@ export default function VoterAccess() {
         setStep("vote")
     }
 
-    const handleCastVote = () => {
-        if (!selectedCandidate) {
+    const handleCastVote = async () => {
+        if (!selectedCandidate || !selectedElection || !verifiedVoter) {
             setError("Please select a candidate before casting your vote.")
             return
         }
 
-        // TODO: Submit vote to backend/blockchain
-        console.log("Casting vote:", {
-            voterId: verifiedVoter.voterId,
-            electionId: selectedElection.id,
-            candidateId: selectedCandidate.id
-        })
+        setError("")
+        setVotingProgress({ step: 0, message: "Starting vote process..." })
 
-        // Mark voter as having voted (in real app, this would be done on backend)
-        const electionIndex = electionsData.findIndex(e => e.id === selectedElection.id)
-        const voterIndex = electionsData[electionIndex].authorizedVoters.findIndex(
-            v => v.voterId === verifiedVoter.voterId
-        )
-        electionsData[electionIndex].authorizedVoters[voterIndex].hasVoted = true
+        // Define all 8 steps
+        const steps = [
+            { step: 1, message: "Verifying session validity..." },
+            { step: 2, message: "Registering wallet with paymaster..." },
+            { step: 3, message: "Preparing vote transaction data..." },
+            { step: 4, message: "Retrieving wallet nonce..." },
+            { step: 5, message: "Creating signature hash..." },
+            { step: 6, message: "Signing transaction..." },
+            { step: 7, message: "Executing gasless transaction..." },
+            { step: 8, message: "Waiting for transaction confirmation..." },
+        ]
 
-        setStep("success")
+        let currentStepIndex = 0
+
+        // Simulate progress updates (we can't get real-time updates from server actions)
+        const progressInterval = setInterval(() => {
+            if (currentStepIndex < steps.length) {
+                setVotingProgress(steps[currentStepIndex])
+                currentStepIndex++
+            } else {
+                clearInterval(progressInterval)
+            }
+        }, 1500) // Update every 1.5 seconds
+
+        try {
+            const voteResult = await castVoteAction(
+                verifiedVoter,
+                Number(selectedElection.id),
+                Number(selectedCandidate.id)
+            )
+
+            clearInterval(progressInterval)
+
+            if (!voteResult.success) {
+                setVotingProgress(null)
+                setError(voteResult.message || "Failed to cast vote")
+                return
+            }
+
+            // Mark as completed
+            setVotingProgress({ step: 8, message: "Vote cast successfully!" })
+
+            console.log("Vote result:", voteResult)
+            if (voteResult.success) {
+                // Small delay to show completion
+                setTimeout(() => {
+                    setVotingProgress(null)
+                    setStep("success")
+                }, 1000)
+            } else {
+                setVotingProgress(null)
+                setError(voteResult.message || "Failed to cast vote")
+            }
+        } catch {
+            clearInterval(progressInterval)
+            setVotingProgress(null)
+            setError("An error occurred while casting your vote")
+        }
     }
 
     const resetVoting = () => {
         setStep("verify")
-        setVoterInfo({ voterId: "", email: "" })
+        setNic("")
         setVerifiedVoter(null)
         setAvailableElections([])
         setSelectedElection(null)
         setSelectedCandidate(null)
         setError("")
+        setVotingProgress(null)
     }
 
     return (
@@ -165,29 +327,17 @@ export default function VoterAccess() {
                                     <span>Verify Your Identity</span>
                                 </CardTitle>
                                 <CardDescription className="text-sm">
-                                    Enter your Voter ID and email address to access elections
+                                    Enter your NIC (National Identity Card) number to access elections
                                 </CardDescription>
                             </CardHeader>
                             <CardContent className="space-y-4">
                                 <div className="space-y-2">
-                                    <Label htmlFor="voterId" className="text-sm font-medium">Voter ID</Label>
+                                    <Label htmlFor="nic" className="text-sm font-medium">NIC Number</Label>
                                     <Input
-                                        id="voterId"
-                                        placeholder="e.g., VTR-001"
-                                        value={voterInfo.voterId}
-                                        onChange={(e) => setVoterInfo(prev => ({ ...prev, voterId: e.target.value }))}
-                                        className="text-base"
-                                    />
-                                </div>
-
-                                <div className="space-y-2">
-                                    <Label htmlFor="email" className="text-sm font-medium">Email Address</Label>
-                                    <Input
-                                        id="email"
-                                        type="email"
-                                        placeholder="your.email@example.com"
-                                        value={voterInfo.email}
-                                        onChange={(e) => setVoterInfo(prev => ({ ...prev, email: e.target.value }))}
+                                        id="nic"
+                                        placeholder="e.g., 123456789V"
+                                        value={nic}
+                                        onChange={(e) => setNic(e.target.value)}
                                         className="text-base"
                                     />
                                 </div>
@@ -202,21 +352,20 @@ export default function VoterAccess() {
                                 <Button
                                     onClick={handleVerifyVoter}
                                     className="w-full"
-                                    disabled={!voterInfo.voterId || !voterInfo.email}
+                                    disabled={!nic || isPending}
                                 >
-                                    <Search className="mr-2 h-4 w-4" />
-                                    Verify Identity
+                                    {isPending ? (
+                                        <>
+                                            <div className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                                            Verifying...
+                                        </>
+                                    ) : (
+                                        <>
+                                            <Search className="mr-2 h-4 w-4" />
+                                            Verify Identity
+                                        </>
+                                    )}
                                 </Button>
-
-                                <div className="bg-blue-50 dark:bg-blue-950 p-3 sm:p-4 rounded-lg">
-                                    <p className="text-sm text-blue-800 dark:text-blue-200 font-medium mb-2">
-                                        Demo Credentials:
-                                    </p>
-                                    <div className="text-xs text-blue-700 dark:text-blue-300 space-y-1">
-                                        <p className="break-all">Voter ID: VTR-001, Email: john@example.com</p>
-                                        <p className="break-all">Voter ID: VTR-003, Email: mike@example.com</p>
-                                    </div>
-                                </div>
                             </CardContent>
                         </Card>
                     )}
@@ -225,51 +374,69 @@ export default function VoterAccess() {
                     {step === "select-election" && (
                         <Card>
                             <CardHeader>
-                                <CardTitle className="text-lg sm:text-xl">Welcome, {verifiedVoter.name}!</CardTitle>
+                                <CardTitle className="text-lg sm:text-xl">Welcome!</CardTitle>
                                 <CardDescription className="text-sm">
-                                    Select an election to participate in
+                                    Select an election to participate in. NIC: {verifiedVoter?.nic}
                                 </CardDescription>
                             </CardHeader>
                             <CardContent className="space-y-3 sm:space-y-4">
-                                {availableElections.map((election) => {
-                                    const voterInElection = election.authorizedVoters.find(
-                                        (v: any) => v.voterId === verifiedVoter.voterId
-                                    )
+                                {availableElections.length === 0 ? (
+                                    <div className="text-center py-8 text-muted-foreground">
+                                        <p className="text-sm">No elections available for this voter.</p>
+                                    </div>
+                                ) : (
+                                    availableElections.map((election) => {
+                                        const hasVoted = (election as Election & { _voterHasVoted?: boolean })._voterHasVoted || false
+                                        const isActive = election.status === "active"
 
-                                    return (
-                                        <div
-                                            key={election.id}
-                                            className={`border rounded-lg p-3 sm:p-4 cursor-pointer transition-colors ${voterInElection?.hasVoted
-                                                ? 'border-green-200 bg-green-50 dark:border-green-800 dark:bg-green-950'
-                                                : 'hover:border-primary hover:bg-primary/5'
-                                                }`}
-                                            onClick={() => !voterInElection?.hasVoted && handleSelectElection(election)}
-                                        >
-                                            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between space-y-2 sm:space-y-0">
-                                                <div className="min-w-0 flex-1">
-                                                    <h3 className="font-semibold text-sm sm:text-base truncate">{election.title}</h3>
-                                                    <p className="text-xs sm:text-sm text-muted-foreground line-clamp-2">{election.description}</p>
-                                                    <div className="text-xs text-muted-foreground mt-1 space-y-1">
-                                                        <p>Voting Period: {new Date(election.startDate || election.endDate).toLocaleDateString()} - {new Date(election.endDate).toLocaleDateString()}</p>
-                                                        <p className="text-blue-600 dark:text-blue-400">
-                                                            Status: {election.status === 'active' ? 'Voting Open' : election.status}
-                                                        </p>
+                                        return (
+                                            <div
+                                                key={election.id}
+                                                className={`border rounded-lg p-3 sm:p-4 transition-colors ${hasVoted
+                                                    ? 'border-green-200 bg-green-50 dark:border-green-800 dark:bg-green-950 cursor-not-allowed'
+                                                    : isActive
+                                                        ? 'cursor-pointer hover:border-primary hover:bg-primary/5'
+                                                        : 'border-gray-200 bg-gray-50 dark:border-gray-800 dark:bg-gray-950 cursor-not-allowed opacity-60'
+                                                    }`}
+                                                onClick={() => !hasVoted && isActive && handleSelectElection(election)}
+                                            >
+                                                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between space-y-2 sm:space-y-0">
+                                                    <div className="min-w-0 flex-1">
+                                                        <h3 className="font-semibold text-sm sm:text-base truncate">{election.title}</h3>
+                                                        <p className="text-xs sm:text-sm text-muted-foreground line-clamp-2 mt-1">{election.description}</p>
+                                                        <div className="text-xs text-muted-foreground mt-2 space-y-1">
+                                                            <p>
+                                                                Voting Period: {new Date(election.startDate || election.endDate).toLocaleDateString()} - {new Date(election.endDate).toLocaleDateString()}
+                                                            </p>
+                                                            <p className={`font-medium ${election.status === "active"
+                                                                ? "text-green-600 dark:text-green-400"
+                                                                : election.status === "completed"
+                                                                    ? "text-gray-600 dark:text-gray-400"
+                                                                    : "text-blue-600 dark:text-blue-400"
+                                                                }`}>
+                                                                Status: {election.status === "active" ? "Voting Open" : election.status === "completed" ? "Completed" : "Not Started"}
+                                                            </p>
+                                                        </div>
+                                                    </div>
+                                                    <div className="flex items-center justify-end sm:justify-center space-x-2 flex-shrink-0">
+                                                        {hasVoted ? (
+                                                            <div className="flex items-center space-x-1 text-green-600">
+                                                                <CheckCircle className="h-4 w-4" />
+                                                                <span className="text-sm">Voted</span>
+                                                            </div>
+                                                        ) : isActive ? (
+                                                            <ArrowRight className="h-4 w-4 text-muted-foreground" />
+                                                        ) : (
+                                                            <span className="text-xs text-muted-foreground">
+                                                                {election.status === "completed" ? "Ended" : "Not Started"}
+                                                            </span>
+                                                        )}
                                                     </div>
                                                 </div>
-                                                <div className="flex items-center justify-end sm:justify-center space-x-2 flex-shrink-0">
-                                                    {voterInElection?.hasVoted ? (
-                                                        <div className="flex items-center space-x-1 text-green-600">
-                                                            <CheckCircle className="h-4 w-4" />
-                                                            <span className="text-sm">Voted</span>
-                                                        </div>
-                                                    ) : (
-                                                        <ArrowRight className="h-4 w-4 text-muted-foreground" />
-                                                    )}
-                                                </div>
                                             </div>
-                                        </div>
-                                    )
-                                })}
+                                        )
+                                    })
+                                )}
 
                                 {error && (
                                     <div className="flex items-start space-x-2 text-red-600 bg-red-50 dark:bg-red-950 p-3 rounded-lg">
@@ -289,36 +456,108 @@ export default function VoterAccess() {
                     {step === "vote" && (
                         <Card>
                             <CardHeader>
-                                <CardTitle className="text-lg sm:text-xl truncate">{selectedElection.title}</CardTitle>
+                                <CardTitle className="text-lg sm:text-xl truncate">{selectedElection?.title}</CardTitle>
                                 <CardDescription className="text-sm space-y-1">
                                     <p>Select your preferred candidate</p>
                                     <p className="text-blue-600 dark:text-blue-400 font-medium">
-                                        Voting Period: {new Date(selectedElection.startDate || selectedElection.endDate).toLocaleDateString()} - {new Date(selectedElection.endDate).toLocaleDateString()}
+                                        Voting Period: {new Date(selectedElection?.startDate || selectedElection?.endDate || "").toLocaleDateString()} - {new Date(selectedElection?.endDate || "").toLocaleDateString()}
                                     </p>
                                 </CardDescription>
                             </CardHeader>
                             <CardContent className="space-y-3 sm:space-y-4">
-                                {selectedElection.candidates.map((candidate: any) => (
-                                    <div
-                                        key={candidate.id}
-                                        className={`border rounded-lg p-3 sm:p-4 cursor-pointer transition-colors ${selectedCandidate?.id === candidate.id
-                                            ? 'border-primary bg-primary/5 ring-2 ring-primary/20'
-                                            : 'hover:border-primary/50'
-                                            }`}
-                                        onClick={() => setSelectedCandidate(candidate)}
-                                    >
-                                        <div className="flex items-start justify-between">
-                                            <div className="flex-1 min-w-0">
-                                                <h3 className="font-semibold text-sm sm:text-base truncate">{candidate.name}</h3>
-                                                <p className="text-xs sm:text-sm text-primary font-medium">{candidate.party}</p>
-                                                <p className="text-xs sm:text-sm text-muted-foreground mt-2 line-clamp-3">{candidate.description}</p>
-                                            </div>
-                                            {selectedCandidate?.id === candidate.id && (
-                                                <CheckCircle className="h-5 w-5 text-primary ml-3 sm:ml-4 flex-shrink-0" />
-                                            )}
+                                {/* Progress Indicator */}
+                                {votingProgress && (
+                                    <div className="bg-muted/50 rounded-lg p-4 space-y-3 border">
+                                        <div className="flex items-center justify-between mb-2">
+                                            <h4 className="text-sm font-semibold">Voting Progress</h4>
+                                            <span className="text-xs text-muted-foreground">
+                                                Step {votingProgress.step} of 8
+                                            </span>
                                         </div>
+                                        <div className="space-y-2">
+                                            {[
+                                                { step: 1, message: "Verifying session validity..." },
+                                                { step: 2, message: "Registering wallet with paymaster..." },
+                                                { step: 3, message: "Preparing vote transaction data..." },
+                                                { step: 4, message: "Retrieving wallet nonce..." },
+                                                { step: 5, message: "Creating signature hash..." },
+                                                { step: 6, message: "Signing transaction..." },
+                                                { step: 7, message: "Executing gasless transaction..." },
+                                                { step: 8, message: "Waiting for transaction confirmation..." },
+                                            ].map((stepInfo) => {
+                                                const isCompleted = votingProgress.step > stepInfo.step
+                                                const isCurrent = votingProgress.step === stepInfo.step
+
+                                                return (
+                                                    <div
+                                                        key={stepInfo.step}
+                                                        className={`flex items-start space-x-3 p-2 rounded transition-colors ${isCurrent
+                                                            ? "bg-primary/10 border border-primary/20"
+                                                            : isCompleted
+                                                                ? "opacity-60"
+                                                                : "opacity-40"
+                                                            }`}
+                                                    >
+                                                        <div className="flex-shrink-0 mt-0.5">
+                                                            {isCompleted ? (
+                                                                <CheckCircle className="h-4 w-4 text-green-600" />
+                                                            ) : isCurrent ? (
+                                                                <div className="h-4 w-4 rounded-full border-2 border-primary border-t-transparent animate-spin" />
+                                                            ) : (
+                                                                <div className="h-4 w-4 rounded-full border-2 border-muted-foreground/30" />
+                                                            )}
+                                                        </div>
+                                                        <div className="flex-1 min-w-0">
+                                                            <p
+                                                                className={`text-xs sm:text-sm ${isCurrent
+                                                                    ? "font-semibold text-primary"
+                                                                    : isCompleted
+                                                                        ? "text-muted-foreground line-through"
+                                                                        : "text-muted-foreground"
+                                                                    }`}
+                                                            >
+                                                                {stepInfo.message}
+                                                            </p>
+                                                        </div>
+                                                    </div>
+                                                )
+                                            })}
+                                        </div>
+                                        {votingProgress.step === 0 && (
+                                            <p className="text-xs text-center text-muted-foreground mt-2">
+                                                {votingProgress.message}
+                                            </p>
+                                        )}
                                     </div>
-                                ))}
+                                )}
+
+                                {selectedElection?.candidates && selectedElection.candidates.length > 0 ? (
+                                    selectedElection.candidates.map((candidate: Candidate) => (
+                                        <div
+                                            key={candidate.id}
+                                            className={`border rounded-lg p-3 sm:p-4 cursor-pointer transition-colors ${selectedCandidate?.id === candidate.id
+                                                ? 'border-primary bg-primary/5 ring-2 ring-primary/20'
+                                                : 'hover:border-primary/50'
+                                                }`}
+                                            onClick={() => setSelectedCandidate(candidate)}
+                                        >
+                                            <div className="flex items-start justify-between">
+                                                <div className="flex-1 min-w-0">
+                                                    <h3 className="font-semibold text-sm sm:text-base truncate">{candidate.name}</h3>
+                                                    <p className="text-xs sm:text-sm text-primary font-medium">{candidate.party}</p>
+                                                    <p className="text-xs sm:text-sm text-muted-foreground mt-2 line-clamp-3">{candidate.description}</p>
+                                                </div>
+                                                {selectedCandidate?.id === candidate.id && (
+                                                    <CheckCircle className="h-5 w-5 text-primary ml-3 sm:ml-4 flex-shrink-0" />
+                                                )}
+                                            </div>
+                                        </div>
+                                    ))
+                                ) : (
+                                    <div className="text-center py-8 text-muted-foreground">
+                                        <p className="text-sm">No candidates available for this election.</p>
+                                    </div>
+                                )}
 
                                 {error && (
                                     <div className="flex items-start space-x-2 text-red-600 bg-red-50 dark:bg-red-950 p-3 rounded-lg">
@@ -328,12 +567,33 @@ export default function VoterAccess() {
                                 )}
 
                                 <div className="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-2">
-                                    <Button variant="outline" onClick={() => setStep("select-election")} className="flex-1">
+                                    <Button
+                                        variant="outline"
+                                        onClick={() => {
+                                            setStep("select-election")
+                                            setVotingProgress(null)
+                                        }}
+                                        className="flex-1"
+                                        disabled={!!votingProgress}
+                                    >
                                         Back
                                     </Button>
-                                    <Button onClick={handleCastVote} className="flex-1">
-                                        <Vote className="mr-2 h-4 w-4" />
-                                        Cast Vote
+                                    <Button
+                                        onClick={handleCastVote}
+                                        className="flex-1"
+                                        disabled={!!votingProgress || !selectedCandidate}
+                                    >
+                                        {votingProgress ? (
+                                            <>
+                                                <div className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                                                Processing...
+                                            </>
+                                        ) : (
+                                            <>
+                                                <Vote className="mr-2 h-4 w-4" />
+                                                Cast Vote
+                                            </>
+                                        )}
                                     </Button>
                                 </div>
                             </CardContent>
@@ -358,8 +618,8 @@ export default function VoterAccess() {
                                 <div className="bg-muted p-3 sm:p-4 rounded-lg text-left">
                                     <p className="text-sm font-medium mb-2">Vote Summary:</p>
                                     <div className="space-y-1 text-xs sm:text-sm text-muted-foreground">
-                                        <p className="truncate">Election: {selectedElection.title}</p>
-                                        <p className="truncate">Candidate: {selectedCandidate.name}</p>
+                                        <p className="truncate">Election: {selectedElection?.title}</p>
+                                        <p className="truncate">Candidate: {selectedCandidate?.name}</p>
                                         <p>Time: {new Date().toLocaleString()}</p>
                                     </div>
                                 </div>
@@ -369,7 +629,7 @@ export default function VoterAccess() {
                                         Vote in Another Election
                                     </Button>
                                     <Button variant="outline" className="w-full" asChild>
-                                        <a href={`/results/${selectedElection.id}`} target="_blank" rel="noopener noreferrer">
+                                        <a href={`/results/${selectedElection?.id}`} target="_blank" rel="noopener noreferrer">
                                             <BarChart3 className="mr-2 h-4 w-4" />
                                             View Public Results
                                         </a>
