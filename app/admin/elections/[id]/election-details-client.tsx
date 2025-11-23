@@ -97,17 +97,7 @@ export default function ElectionDetailsClient({
 			? (votedCount / election.totalVoters) * 100
 			: 0;
 
-	const handleDeleteElection = () => {
-		if (
-			confirm(
-				"Are you sure you want to delete this election? This action cannot be undone."
-			)
-		) {
-			// TODO: Delete election from backend/contract
-			console.log("Deleting election:", election.id);
-			router.push("/admin/elections");
-		}
-	};
+
 
 	const handleExportData = () => {
 		// Generate CSV data
@@ -189,14 +179,7 @@ export default function ElectionDetailsClient({
 								<Download className="mr-2 h-4 w-4" />
 								Export
 							</Button>
-							<Button
-								variant="destructive"
-								onClick={handleDeleteElection}
-								className="w-full sm:w-auto"
-							>
-								<Trash2 className="mr-2 h-4 w-4" />
-								Delete
-							</Button>
+
 						</div>
 					</div>
 				</div>
@@ -259,8 +242,8 @@ export default function ElectionDetailsClient({
 						<button
 							onClick={() => setActiveTab("overview")}
 							className={`py-2 px-1 border-b-2 font-medium text-xs sm:text-sm whitespace-nowrap ${activeTab === "overview"
-									? "border-primary text-primary"
-									: "border-transparent text-muted-foreground hover:text-foreground hover:border-gray-300"
+								? "border-primary text-primary"
+								: "border-transparent text-muted-foreground hover:text-foreground hover:border-gray-300"
 								}`}
 						>
 							Overview
@@ -268,8 +251,8 @@ export default function ElectionDetailsClient({
 						<button
 							onClick={() => setActiveTab("candidates")}
 							className={`py-2 px-1 border-b-2 font-medium text-xs sm:text-sm whitespace-nowrap ${activeTab === "candidates"
-									? "border-primary text-primary"
-									: "border-transparent text-muted-foreground hover:text-foreground hover:border-gray-300"
+								? "border-primary text-primary"
+								: "border-transparent text-muted-foreground hover:text-foreground hover:border-gray-300"
 								}`}
 						>
 							<span className="hidden sm:inline">
@@ -280,8 +263,8 @@ export default function ElectionDetailsClient({
 						<button
 							onClick={() => setActiveTab("voters")}
 							className={`py-2 px-1 border-b-2 font-medium text-xs sm:text-sm whitespace-nowrap ${activeTab === "voters"
-									? "border-primary text-primary"
-									: "border-transparent text-muted-foreground hover:text-foreground hover:border-gray-300"
+								? "border-primary text-primary"
+								: "border-transparent text-muted-foreground hover:text-foreground hover:border-gray-300"
 								}`}
 						>
 							<span className="hidden sm:inline">
@@ -292,8 +275,8 @@ export default function ElectionDetailsClient({
 						<button
 							onClick={() => setActiveTab("results")}
 							className={`py-2 px-1 border-b-2 font-medium text-xs sm:text-sm whitespace-nowrap ${activeTab === "results"
-									? "border-primary text-primary"
-									: "border-transparent text-muted-foreground hover:text-foreground hover:border-gray-300"
+								? "border-primary text-primary"
+								: "border-transparent text-muted-foreground hover:text-foreground hover:border-gray-300"
 								}`}
 						>
 							Results
@@ -415,10 +398,10 @@ export default function ElectionDetailsClient({
 												<div className="w-full sm:w-24 bg-gray-200 rounded-full h-2 mt-2">
 													<div
 														className={`h-2 rounded-full ${index === 0
-																? "bg-blue-500"
-																: index === 1
-																	? "bg-green-500"
-																	: "bg-yellow-500"
+															? "bg-blue-500"
+															: index === 1
+																? "bg-green-500"
+																: "bg-yellow-500"
 															}`}
 														style={{ width: `${candidate.percentage}%` }}
 													/>
@@ -534,10 +517,10 @@ export default function ElectionDetailsClient({
 											<div className="w-full bg-gray-200 rounded-full h-2 sm:h-3">
 												<div
 													className={`h-2 sm:h-3 rounded-full transition-all duration-300 ${index === 0
-															? "bg-blue-500"
-															: index === 1
-																? "bg-green-500"
-																: "bg-yellow-500"
+														? "bg-blue-500"
+														: index === 1
+															? "bg-green-500"
+															: "bg-yellow-500"
 														}`}
 													style={{ width: `${candidate.percentage}%` }}
 												/>
