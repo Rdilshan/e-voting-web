@@ -1,21 +1,59 @@
 "use server";
 
 import {ethers} from "ethers";
-import ElectionContract from "../../smartContract/Election.json";
+import Zk_election from "../../smartContract/Zk_election.json";
 import {retryWithBackoff} from "@/app/lib/helper";
+import {
+	ElectionResultsResponse,
+	ElectionDataArray,
+	CandidateDataArray,
+} from "@/app/lib/interface";
+import {getServiceRoleClient} from "@/service/supabase";
 
-export async function getElectionResults(electionId: number) {
+export async function getElectionResults(
+	electionId: number
+): Promise<ElectionResultsResponse> {
 	try {
+		// Validate environment variables
 		if (
 			!process.env.WALLET_PRIVATE_KEY ||
 			!process.env.RPC_URL ||
-			!process.env.ELECTION_ADDRESS
+			!process.env.ZK_ELECTIONCONTRACT
 		) {
 			throw new Error(
-				"Missing required environment variables: WALLET_PRIVATE_KEY, RPC_URL, SESSION_ADDRESS, ELECTION_CONTRACT_ADDRESS, PAYMASTER_ADDRESS"
+				"Missing required environment variables: WALLET_PRIVATE_KEY, RPC_URL, ZK_ELECTIONCONTRACT"
 			);
 		}
 
+		// Step 1: Get election from Supabase database
+		const supabase = getServiceRoleClient();
+		const {data: supabaseElection, error: supabaseError} = await supabase
+			.from("election")
+			.select("*")
+			.eq("election_id", electionId)
+			.single();
+
+		if (supabaseError || !supabaseElection) {
+			return {
+				success: false,
+				error: "Election not found",
+			};
+		}
+
+		// Step 2: Get voters from Supabase for this election
+		const {data: votersData, error: votersError} = await supabase
+			.from("voter")
+			.select("*")
+			.eq("election_id", electionId);
+
+		if (votersError) {
+			console.error("Error fetching voters from Supabase:", votersError);
+			// Continue even if voters fetch fails
+		}
+
+		const totalEligibleVoters = BigInt(votersData?.length || 0);
+
+		// Step 3: Setup blockchain connection
 		const provider = new ethers.JsonRpcProvider(
 			process.env.RPC_URL,
 			undefined,
@@ -29,19 +67,61 @@ export async function getElectionResults(electionId: number) {
 			provider
 		);
 
-		const electionContract = new ethers.Contract(
-			process.env.ELECTION_ADDRESS,
-			ElectionContract,
+		const zkElectionContract = new ethers.Contract(
+			process.env.ZK_ELECTIONCONTRACT,
+			Zk_election,
 			systemWallet
 		);
 
-		const results = await retryWithBackoff(async () => {
-			return await electionContract.getElectionData(electionId);
+		// Step 4: Get election data from blockchain
+		const electionData = await retryWithBackoff(async () => {
+			return await zkElectionContract.getElectionData(electionId);
 		});
 
+		// electionData returns: [Election struct, Candidate[]]
+		const [electionStruct, candidatesData] = electionData;
+
+		// Check if election exists on blockchain
+		if (!electionStruct.exists) {
+			return {
+				success: false,
+				error: "Election not found on blockchain",
+			};
+		}
+
+		// Step 5: Transform blockchain data to match ElectionResultsResponse format
+		// ElectionDataArray: [string, string, bigint, bigint, bigint, boolean]
+		// [title, description, startDate, endDate, totalVotes, exists]
+		const electionDataArray: ElectionDataArray = [
+			electionStruct.electionTitle || supabaseElection.title || "",
+			electionStruct.description || supabaseElection.description || "",
+			electionStruct.startDate,
+			electionStruct.endDate,
+			electionStruct.totalVotes,
+			electionStruct.exists,
+		];
+
+		// Transform candidates: CandidateDataArray[] = [string, string, string, bigint][]
+		// [name, nic, party, voteCount]
+		const candidatesDataArray: CandidateDataArray[] = candidatesData.map(
+			(candidate: {
+				name: string;
+				nic: string;
+				party: string;
+				voteCount: bigint;
+			}) => [
+				candidate.name || "",
+				candidate.nic || "",
+				candidate.party || "Independent",
+				candidate.voteCount,
+			]
+		);
+
+		// Return in the format expected by ElectionResultsResponse
+		// [ElectionDataArray, CandidateDataArray[], bigint]
 		return {
 			success: true,
-			results: results,
+			results: [electionDataArray, candidatesDataArray, totalEligibleVoters],
 		};
 	} catch (error: unknown) {
 		console.error("Error getting election results:", error);
@@ -50,7 +130,6 @@ export async function getElectionResults(electionId: number) {
 		return {
 			success: false,
 			error: errorMessage,
-			message: "Failed to get election results",
 		};
 	}
 }

@@ -1,8 +1,9 @@
 "use server";
 
 import {ethers} from "ethers";
-import ElectionContract from "../../smartContract/Election.json";
+import Zk_election from "../../smartContract/Zk_election.json";
 import {retryWithBackoff} from "@/app/lib/helper";
+import {getServiceRoleClient} from "@/service/supabase";
 
 export interface DashboardElectionData {
 	id: number;
@@ -33,16 +34,47 @@ export async function getDashboardData(): Promise<{
 	message?: string;
 }> {
 	try {
+		// Validate environment variables
 		if (
 			!process.env.WALLET_PRIVATE_KEY ||
 			!process.env.RPC_URL ||
-			!process.env.ELECTION_ADDRESS
+			!process.env.ZK_ELECTIONCONTRACT
 		) {
 			throw new Error(
-				"Missing required environment variables: WALLET_PRIVATE_KEY, RPC_URL, ELECTION_ADDRESS"
+				"Missing required environment variables: WALLET_PRIVATE_KEY, RPC_URL, ZK_ELECTIONCONTRACT"
 			);
 		}
 
+		// Step 1: Get elections from Supabase database
+		const supabase = getServiceRoleClient();
+		const {data: supabaseElections, error: supabaseError} = await supabase
+			.from("election")
+			.select("*")
+			.order("created_at", {ascending: false});
+
+		if (supabaseError) {
+			console.error("Error fetching elections from Supabase:", supabaseError);
+			throw new Error(
+				`Failed to fetch elections from database: ${supabaseError.message}`
+			);
+		}
+
+		if (!supabaseElections || supabaseElections.length === 0) {
+			return {
+				success: true,
+				data: {
+					totalElections: 0,
+					activeElections: 0,
+					totalVoters: 0,
+					totalCandidates: 0,
+					totalVotes: 0,
+					voterTurnout: 0,
+					recentElections: [],
+				},
+			};
+		}
+
+		// Step 2: Setup blockchain connection
 		const provider = new ethers.JsonRpcProvider(
 			process.env.RPC_URL,
 			undefined,
@@ -56,17 +88,36 @@ export async function getDashboardData(): Promise<{
 			provider
 		);
 
-		const electionContract = new ethers.Contract(
-			process.env.ELECTION_ADDRESS,
-			ElectionContract,
+		const zkElectionContract = new ethers.Contract(
+			process.env.ZK_ELECTIONCONTRACT,
+			Zk_election,
 			systemWallet
 		);
 
-		// Get all election IDs
-		const electionIds = await retryWithBackoff(async () => {
-			return await electionContract.getAllElectionList();
-		});
+		// Step 3: Get voters from Supabase for all elections
+		const electionIds = supabaseElections
+			.map((e) => e.election_id)
+			.filter((id) => id !== null);
+		const {data: allVoters, error: votersError} = await supabase
+			.from("voter")
+			.select("*")
+			.in("election_id", electionIds);
 
+		if (votersError) {
+			console.error("Error fetching voters from Supabase:", votersError);
+			// Continue even if voters fetch fails
+		}
+
+		// Create a map of election_id to voter count
+		const voterCountMap = new Map<number, number>();
+		if (allVoters) {
+			allVoters.forEach((voter) => {
+				const electionId = Number(voter.election_id);
+				voterCountMap.set(electionId, (voterCountMap.get(electionId) || 0) + 1);
+			});
+		}
+
+		// Step 4: Fetch blockchain data for each election and calculate statistics
 		const now = Math.floor(Date.now() / 1000);
 		const elections: DashboardElectionData[] = [];
 		let totalVoters = 0;
@@ -74,22 +125,41 @@ export async function getDashboardData(): Promise<{
 		let totalVotes = 0;
 		let activeElections = 0;
 
-		// Fetch data for each election
-		for (const electionIdBigInt of electionIds) {
-			const electionId = Number(electionIdBigInt);
+		for (const supabaseElection of supabaseElections) {
+			const electionId = Number(supabaseElection.election_id);
+
+			if (!electionId && electionId !== 0) {
+				console.warn(
+					`Skipping election with invalid ID: ${supabaseElection.id}`
+				);
+				continue;
+			}
 
 			try {
+				// Get election data from blockchain
 				const electionData = await retryWithBackoff(async () => {
-					return await electionContract.getElectionData(electionId);
+					return await zkElectionContract.getElectionData(electionId);
 				});
 
-				// Election data: [electionTitle, description, startDate, endDate, totalVotes, exists]
-				const [electionInfo, candidatesData, eligibleVoters] = electionData;
+				// electionData returns: [Election struct, Candidate[]]
+				const [electionStruct, candidatesData] = electionData;
 
-				// Access election struct as array (ethers.js converts structs to arrays)
-				const startDate = Number(electionInfo[2]) || 0;
-				const endDate = Number(electionInfo[3]) || 0;
-				const votes = Number(electionInfo[4]) || 0;
+				// Check if election exists on blockchain
+				if (!electionStruct.exists) {
+					console.warn(`Election ${electionId} not found on blockchain`);
+					continue;
+				}
+
+				// Extract election data from struct
+				const startDate = Number(electionStruct.startDate) || 0;
+				const endDate = Number(electionStruct.endDate) || 0;
+				const votes = Number(electionStruct.totalVotes) || 0;
+
+				// Get voter count from Supabase
+				const eligibleVotersCount = voterCountMap.get(electionId) || 0;
+				const candidateCount = Array.isArray(candidatesData)
+					? candidatesData.length
+					: 0;
 
 				// Determine status
 				let status: "active" | "completed" | "upcoming";
@@ -102,19 +172,16 @@ export async function getDashboardData(): Promise<{
 					activeElections++;
 				}
 
-				const candidateCount = Array.isArray(candidatesData)
-					? candidatesData.length
-					: 0;
-				const eligibleVotersCount = Number(eligibleVoters) || 0;
-
+				// Accumulate statistics
 				totalVoters += eligibleVotersCount;
 				totalCandidates += candidateCount;
 				totalVotes += votes;
 
 				elections.push({
 					id: electionId,
-					title: electionInfo[0] || "",
-					description: electionInfo[1] || "",
+					title: electionStruct.electionTitle || supabaseElection.title || "",
+					description:
+						electionStruct.description || supabaseElection.description || "",
 					status,
 					startDate,
 					endDate,
@@ -123,7 +190,10 @@ export async function getDashboardData(): Promise<{
 					candidateCount,
 				});
 			} catch (error) {
-				console.error(`Error fetching election ${electionId}:`, error);
+				console.error(
+					`Error fetching election ${electionId} from blockchain:`,
+					error
+				);
 				// Continue with other elections even if one fails
 			}
 		}
@@ -134,7 +204,7 @@ export async function getDashboardData(): Promise<{
 		// Get recent elections (last 5)
 		const recentElections = elections.slice(0, 5);
 
-		// Calculate voter turnout (average across all elections)
+		// Calculate voter turnout (average across completed elections)
 		const completedElections = elections.filter(
 			(e) => e.status === "completed"
 		);
