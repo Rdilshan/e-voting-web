@@ -1,8 +1,10 @@
 "use client"
 
 import Link from "next/link"
+import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Vote, User, LogOut, Menu } from "lucide-react"
+import { logoutAction } from "@/app/actions/auth"
 
 interface HeaderProps {
     userType?: "admin" | "voter" | null
@@ -12,6 +14,18 @@ interface HeaderProps {
 }
 
 export function Header({ userType, userName, onMenuClick, showMenuButton }: HeaderProps) {
+    const router = useRouter()
+
+    const handleLogout = async () => {
+        try {
+            await logoutAction();
+            router.push("/");
+        } catch {
+            console.error("Error logging out");
+        }
+    }
+
+
     return (
         <header className="sticky top-0 z-40 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
             <div className="container flex h-16 items-center px-4">
@@ -60,7 +74,7 @@ export function Header({ userType, userName, onMenuClick, showMenuButton }: Head
                                     <User className="h-4 w-4" />
                                     <span className="text-sm font-medium">{userName}</span>
                                 </div>
-                                <Button variant="ghost" size="sm">
+                                <Button variant="ghost" size="sm" onClick={handleLogout}>
                                     <LogOut className="h-4 w-4" />
                                     <span className="hidden sm:ml-2 sm:inline">Logout</span>
                                 </Button>
