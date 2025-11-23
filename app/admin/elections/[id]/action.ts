@@ -1,34 +1,63 @@
 "use server";
 
-import { ethers } from "ethers";
-import ElectionContract from "../../../smartContract/Election.json";
-import { retryWithBackoff } from "@/app/lib/helper";
+import {ethers} from "ethers";
+import Zk_election from "../../../smartContract/Zk_election.json";
+import {retryWithBackoff} from "@/app/lib/helper";
 import {
-	CandidateDataArray,
 	ElectionDetailsCandidate,
 	ElectionDetailsVoter,
 	ElectionDetailsData,
 } from "@/app/lib/interface";
+import {getServiceRoleClient} from "@/service/supabase";
 
-export async function getElectionDetails(
-	electionId: number
-): Promise<{
+export async function getElectionDetails(electionId: number): Promise<{
 	success: boolean;
 	data?: ElectionDetailsData;
 	error?: string;
 	message?: string;
 }> {
 	try {
+		// Validate environment variables
 		if (
 			!process.env.WALLET_PRIVATE_KEY ||
 			!process.env.RPC_URL ||
-			!process.env.ELECTION_ADDRESS
+			!process.env.ZK_ELECTIONCONTRACT
 		) {
 			throw new Error(
-				"Missing required environment variables: WALLET_PRIVATE_KEY, RPC_URL, ELECTION_ADDRESS"
+				"Missing required environment variables: WALLET_PRIVATE_KEY, RPC_URL, ZK_ELECTIONCONTRACT"
 			);
 		}
 
+		// Step 1: Get election from Supabase database
+		const supabase = getServiceRoleClient();
+		const {data: supabaseElection, error: supabaseError} = await supabase
+			.from("election")
+			.select("*")
+			.eq("election_id", electionId)
+			.single();
+
+		if (supabaseError || !supabaseElection) {
+			return {
+				success: false,
+				error: "Election not found",
+				message: "The election does not exist in the database",
+			};
+		}
+
+		// Step 2: Get voters from Supabase for this election
+		const {data: votersData, error: votersError} = await supabase
+			.from("voter")
+			.select("*")
+			.eq("election_id", electionId);
+
+		if (votersError) {
+			console.error("Error fetching voters from Supabase:", votersError);
+			// Continue even if voters fetch fails
+		}
+
+		const totalVoters = votersData?.length || 0;
+
+		// Step 3: Setup blockchain connection
 		const provider = new ethers.JsonRpcProvider(
 			process.env.RPC_URL,
 			undefined,
@@ -42,34 +71,33 @@ export async function getElectionDetails(
 			provider
 		);
 
-		const electionContract = new ethers.Contract(
-			process.env.ELECTION_ADDRESS,
-			ElectionContract,
+		const zkElectionContract = new ethers.Contract(
+			process.env.ZK_ELECTIONCONTRACT,
+			Zk_election,
 			systemWallet
 		);
 
-		// Get election data
+		// Step 4: Get election data from blockchain
 		const electionData = await retryWithBackoff(async () => {
-			return await electionContract.getElectionData(electionId);
+			return await zkElectionContract.getElectionData(electionId);
 		});
 
-		// Election data: [electionTitle, description, startDate, endDate, totalVotes, exists]
-		const [electionInfo, candidatesData, eligibleVoters] = electionData;
+		// electionData returns: [Election struct, Candidate[]]
+		const [electionStruct, candidatesData] = electionData;
 
-		// Check if election exists
-		if (!electionInfo[5]) {
+		// Check if election exists on blockchain
+		if (!electionStruct.exists) {
 			return {
 				success: false,
 				error: "Election not found",
-				message: "The election does not exist",
+				message: "The election does not exist on the blockchain",
 			};
 		}
 
-		// Access election struct as array (ethers.js converts structs to arrays)
-		const startDate = Number(electionInfo[2]) || 0;
-		const endDate = Number(electionInfo[3]) || 0;
-		const votes = Number(electionInfo[4]) || 0;
-		const eligibleVotersCount = Number(eligibleVoters) || 0;
+		// Extract election data from struct
+		const startDate = Number(electionStruct.startDate) || 0;
+		const endDate = Number(electionStruct.endDate) || 0;
+		const totalVotes = Number(electionStruct.totalVotes) || 0;
 
 		// Determine status
 		const now = Math.floor(Date.now() / 1000);
@@ -83,22 +111,30 @@ export async function getElectionDetails(
 		}
 
 		// Calculate turnout
-		const turnout =
-			eligibleVotersCount > 0 ? (votes / eligibleVotersCount) * 100 : 0;
+		const turnout = totalVoters > 0 ? (totalVotes / totalVoters) * 100 : 0;
 
-		// Transform candidates: [[name, nic, party, voteCount], ...]
+		// Transform candidates from blockchain
+		// Candidate struct: { name: string, nic: string, party: string, voteCount: bigint }
 		const candidates: ElectionDetailsCandidate[] = candidatesData.map(
-			(candidate: CandidateDataArray, index: number) => {
-				const voteCount = Number(candidate[3] || 0);
-				const totalVotes = votes || 1; // Avoid division by zero
+			(
+				candidate: {
+					name: string;
+					nic: string;
+					party: string;
+					voteCount: bigint;
+				},
+				index: number
+			) => {
+				const voteCount = Number(candidate.voteCount || 0);
+				const totalVotesForCalc = totalVotes || 1; // Avoid division by zero
 				const percentage =
-					totalVotes > 0 ? (voteCount / totalVotes) * 100 : 0;
+					totalVotesForCalc > 0 ? (voteCount / totalVotesForCalc) * 100 : 0;
 
 				return {
 					id: index,
-					name: candidate[0] || "",
-					nic: candidate[1] || "",
-					party: candidate[2] || "Independent",
+					name: candidate.name || "",
+					nic: candidate.nic || "",
+					party: candidate.party || "Independent",
 					votes: voteCount,
 					percentage: parseFloat(percentage.toFixed(1)),
 				};
@@ -108,33 +144,28 @@ export async function getElectionDetails(
 		// Sort candidates by votes (descending)
 		candidates.sort((a, b) => b.votes - a.votes);
 
-		// Get voter information
-		// Note: The contract stores voter NICs in electionVoterNICs mapping
-		// but doesn't expose a direct way to get all NICs at once
-		// We'll try to get voters by iterating through potential indices
-		// This is a limitation - in production, you might want to add a view function
-		// to return all voter NICs for an election
-		const voters: ElectionDetailsVoter[] = [];
-		
-		// Attempt to get voters by checking voter info for each NIC
-		// Since we don't have a direct list, we'll populate what we can
-		// The client will show voter count and basic info
-		// For detailed voter lists, you'd need to maintain an off-chain index
+		const voters: ElectionDetailsVoter[] =
+			votersData?.map(() => ({
+				nic: "", // NIC not stored in voter table, only wallet_address
+				hasVoted: false, // Cannot determine for ZK elections
+				candidateIndex: undefined,
+			})) || [];
 
 		return {
 			success: true,
 			data: {
 				id: electionId,
-				title: electionInfo[0] || "",
-				description: electionInfo[1] || "",
+				title: electionStruct.electionTitle || supabaseElection.title || "",
+				description:
+					electionStruct.description || supabaseElection.description || "",
 				status,
 				startDate,
 				endDate,
-				totalVotes: votes,
-				totalVoters: eligibleVotersCount,
+				totalVotes,
+				totalVoters,
 				turnout: parseFloat(turnout.toFixed(1)),
 				candidates,
-				voters, // Empty for now - would need additional contract calls
+				voters,
 			},
 		};
 	} catch (error: unknown) {
