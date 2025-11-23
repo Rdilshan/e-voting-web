@@ -1,9 +1,14 @@
 "use server";
 
 import {ethers} from "ethers";
-import ElectionContract from "../../smartContract/Election.json";
+import Zk_election from "../../smartContract/Zk_election.json";
 import NICWalletRegistry from "../../smartContract/NICWalletRegistry.json";
 import {retryWithBackoff} from "@/app/lib/helper";
+import {
+	createVoterMerkleTree,
+	getRegisteredWalletsFromNICs,
+} from "@/app/lib/utils/merkleTree";
+import {getServiceRoleClient} from "@/service/supabase";
 
 interface Candidate {
 	name: string;
@@ -117,7 +122,7 @@ export async function createElection(params: CreateElectionParams): Promise<{
 	if (
 		!process.env.WALLET_PRIVATE_KEY ||
 		!process.env.RPC_URL ||
-		!process.env.ELECTION_ADDRESS ||
+		!process.env.ZK_ELECTIONCONTRACT ||
 		!process.env.SESSION_ADDRESS
 	) {
 		return {
@@ -147,10 +152,10 @@ export async function createElection(params: CreateElectionParams): Promise<{
 			wallet
 		);
 
-		// Connect to Election contract
-		const electionContract = new ethers.Contract(
-			process.env.ELECTION_ADDRESS,
-			ElectionContract,
+		// Connect to ZKElection contract
+		const zkElectionContract = new ethers.Contract(
+			process.env.ZK_ELECTIONCONTRACT,
+			Zk_election,
 			wallet
 		);
 
@@ -298,9 +303,54 @@ export async function createElection(params: CreateElectionParams): Promise<{
 			};
 		}
 
-		// Step 4: Prepare election data
-		const startDate = Math.floor(new Date(params.startDate).getTime() / 1000);
-		const endDate = Math.floor(new Date(params.endDate).getTime() / 1000);
+		// Step 4: Get registered wallet addresses for voters
+		console.log("Getting registered wallet addresses for voters...");
+		const voterNICs = params.voters.map((voter) => voter.nic);
+		const registeredVoterWallets = await getRegisteredWalletsFromNICs(
+			voterNICs,
+			nicRegistryContract
+		);
+
+		if (registeredVoterWallets.length === 0) {
+			return {
+				success: false,
+				message: "No registered wallets found for the provided voter NICs",
+			};
+		}
+
+		if (registeredVoterWallets.length !== voterNICs.length) {
+			console.warn(
+				`Warning: Only ${registeredVoterWallets.length} out of ${voterNICs.length} voters have registered wallets`
+			);
+		}
+
+		// Step 5: Get current election count to determine election ID
+		console.log("Getting current election count...");
+		const currentElectionCount = await retryWithBackoff(async () => {
+			return await zkElectionContract.electionCount();
+		});
+		const electionId = Number(currentElectionCount);
+		console.log(`Next election ID will be: ${electionId}`);
+
+		// Step 6: Create Merkle tree for eligible voters
+		console.log("Creating Merkle tree for eligible voters...");
+		const {root: merkleRoot} = createVoterMerkleTree(
+			registeredVoterWallets,
+			electionId
+		);
+		const merkleRootHex = ethers.hexlify(merkleRoot);
+		console.log(`Merkle root: ${merkleRootHex}`);
+		console.log(
+			`Number of voters in Merkle tree: ${registeredVoterWallets.length}`
+		);
+
+		// Step 7: Prepare election data
+		const startDate = BigInt(
+			Math.floor(new Date(params.startDate).getTime() / 1000)
+		);
+		const endDate = BigInt(
+			Math.floor(new Date(params.endDate).getTime() / 1000)
+		);
 
 		// Prepare candidates array for contract
 		const contractCandidates = params.candidates.map((candidate) => ({
@@ -310,52 +360,120 @@ export async function createElection(params: CreateElectionParams): Promise<{
 			voteCount: 0,
 		}));
 
-		// Prepare voter NICs array
-		const voterNICs = params.voters.map((voter) => voter.nic);
-
-		// Step 5: Create the election
+		// Step 8: Create the election on blockchain
 		console.log(`Creating election "${params.title}" on blockchain...`);
 		console.log("Creating election with data:", {
 			title: params.title,
 			description: params.description,
-			startDate,
-			endDate,
+			startDate: startDate.toString(),
+			endDate: endDate.toString(),
 			candidates: contractCandidates.length,
-			voters: voterNICs.length,
+			voters: registeredVoterWallets.length,
+			merkleRoot: merkleRootHex,
 		});
 
 		const createTx = await retryWithBackoff(async () => {
-			return await electionContract.createElection(
+			return await zkElectionContract.createElection(
 				params.title,
 				params.description,
 				startDate,
 				endDate,
 				contractCandidates,
-				voterNICs
+				merkleRootHex
 			);
 		});
 
-		console.log(
-			`Transaction sent: ${createTx.hash}. Waiting for confirmation...`
-		);
 		console.log("Election creation transaction sent:", createTx.hash);
-		console.log("Waiting for confirmation...");
 
+		// Wait for transaction to be mined
 		const receipt = await createTx.wait();
-		console.log("✓ Election created successfully!");
 		console.log("Election creation confirmed:", receipt);
 
-		// Get the new election ID
-		const electionCount = await retryWithBackoff(async () => {
-			return await electionContract.electionCount();
+		// Verify election was created
+		const createdElection = await retryWithBackoff(async () => {
+			return await zkElectionContract.elections(electionId);
 		});
-		const electionId = Number(electionCount) - 1;
+
+		if (!createdElection.exists) {
+			throw new Error("Election creation verification failed");
+		}
+
+		console.log("✅ Election created successfully!");
+		console.log("Election ID:", electionId);
+		console.log("Merkle Root:", createdElection.votersMerkleRoot);
+
+		// Step 9: Save election data to Supabase
+		console.log("Saving election data to Supabase...");
+		try {
+			const supabase = getServiceRoleClient();
+
+			// Convert BigInt timestamps to ISO date strings
+			const startDateISO = new Date(Number(startDate) * 1000).toISOString();
+			const endDateISO = new Date(Number(endDate) * 1000).toISOString();
+
+			const {data: supabaseData, error: supabaseError} = await supabase
+				.from("election")
+				.insert({
+					election_id: electionId,
+					title: params.title,
+					description: params.description,
+					start_date: startDateISO,
+					end_date: endDateISO,
+					metkle_root: merkleRootHex, // Note: using schema field name as provided
+				})
+				.select()
+				.single();
+
+			if (supabaseError) {
+				console.error("Failed to save election to Supabase:", supabaseError);
+				// Don't fail the entire operation if Supabase save fails
+				// Blockchain creation succeeded, so we return success but log the error
+			} else {
+				console.log("✅ Election data saved to Supabase:", supabaseData);
+			}
+
+			// Step 10: Save voters to voter table
+			console.log("Saving voters to Supabase voter table...");
+			try {
+				// Prepare voter data for insertion - save all registered voter wallets
+				const votersData = registeredVoterWallets.map((walletAddress) => ({
+					election_id: electionId, // Note: schema shows timestamp, but using electionId number
+					wallet_address: walletAddress,
+				}));
+
+				if (votersData.length > 0) {
+					const {data: votersDataResult, error: votersError} = await supabase
+						.from("voter")
+						.insert(votersData)
+						.select();
+
+					if (votersError) {
+						console.error("Failed to save voters to Supabase:", votersError);
+						// Don't fail the entire operation if Supabase save fails
+					} else {
+						console.log(
+							`✅ Successfully saved ${
+								votersDataResult?.length || 0
+							} voters to Supabase`
+						);
+					}
+				} else {
+					console.warn("No voter data to save to Supabase");
+				}
+			} catch (votersErr) {
+				console.error("Error saving voters to Supabase:", votersErr);
+				// Continue even if Supabase save fails - blockchain creation succeeded
+			}
+		} catch (supabaseErr) {
+			console.error("Error saving to Supabase:", supabaseErr);
+			// Continue even if Supabase save fails - blockchain creation succeeded
+		}
 
 		return {
 			success: true,
 			electionId,
 			transactionHash: createTx.hash,
-			message: `Election created successfully with ID ${electionId}`,
+			message: `Election created successfully! Election ID: ${electionId}`,
 		};
 	} catch (error: unknown) {
 		console.error("Error creating election:", error);
