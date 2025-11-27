@@ -236,16 +236,19 @@ export default function VoterAccess() {
         setError("")
         setVotingProgress({ step: 0, message: "Starting vote process..." })
 
-        // Define all 8 steps
+        // Define all 11 steps for ZK voting
         const steps = [
             { step: 1, message: "Verifying session validity..." },
             { step: 2, message: "Registering wallet with paymaster..." },
-            { step: 3, message: "Preparing vote transaction data..." },
-            { step: 4, message: "Retrieving wallet nonce..." },
-            { step: 5, message: "Creating signature hash..." },
-            { step: 6, message: "Signing transaction..." },
-            { step: 7, message: "Executing gasless transaction..." },
-            { step: 8, message: "Waiting for transaction confirmation..." },
+            { step: 3, message: "Preparing ZK proof components..." },
+            { step: 4, message: "Generating vote commitment and nullifier..." },
+            { step: 5, message: "Preparing ZK proof..." },
+            { step: 6, message: "Preparing vote transaction data..." },
+            { step: 7, message: "Retrieving wallet nonce..." },
+            { step: 8, message: "Creating signature hash..." },
+            { step: 9, message: "Signing transaction..." },
+            { step: 10, message: "Executing gasless transaction..." },
+            { step: 11, message: "Waiting for transaction confirmation..." },
         ]
 
         let currentStepIndex = 0
@@ -276,7 +279,7 @@ export default function VoterAccess() {
             }
 
             // Mark as completed
-            setVotingProgress({ step: 8, message: "Vote cast successfully!" })
+            setVotingProgress({ step: 11, message: "Vote cast successfully!" })
 
             console.log("Vote result:", voteResult)
             if (voteResult.success) {
@@ -486,19 +489,22 @@ export default function VoterAccess() {
                                         <div className="flex items-center justify-between mb-2">
                                             <h4 className="text-sm font-semibold">Voting Progress</h4>
                                             <span className="text-xs text-muted-foreground">
-                                                Step {votingProgress.step} of 8
+                                                Step {votingProgress.step} of 11
                                             </span>
                                         </div>
                                         <div className="space-y-2">
                                             {[
                                                 { step: 1, message: "Verifying session validity..." },
                                                 { step: 2, message: "Registering wallet with paymaster..." },
-                                                { step: 3, message: "Preparing vote transaction data..." },
-                                                { step: 4, message: "Retrieving wallet nonce..." },
-                                                { step: 5, message: "Creating signature hash..." },
-                                                { step: 6, message: "Signing transaction..." },
-                                                { step: 7, message: "Executing gasless transaction..." },
-                                                { step: 8, message: "Waiting for transaction confirmation..." },
+                                                { step: 3, message: "Preparing ZK proof components..." },
+                                                { step: 4, message: "Generating vote commitment and nullifier..." },
+                                                { step: 5, message: "Preparing ZK proof..." },
+                                                { step: 6, message: "Preparing vote transaction data..." },
+                                                { step: 7, message: "Retrieving wallet nonce..." },
+                                                { step: 8, message: "Creating signature hash..." },
+                                                { step: 9, message: "Signing transaction..." },
+                                                { step: 10, message: "Executing gasless transaction..." },
+                                                { step: 11, message: "Waiting for transaction confirmation..." },
                                             ].map((stepInfo) => {
                                                 const isCompleted = votingProgress.step > stepInfo.step
                                                 const isCurrent = votingProgress.step === stepInfo.step
