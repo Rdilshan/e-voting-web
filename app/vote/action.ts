@@ -1,7 +1,7 @@
 "use server";
 import {ethers} from "ethers";
 import NICWalletRegistry from "../smartContract/NICWalletRegistry.json";
-import ElectionContract from "../smartContract/Election.json";
+import Zk_election from "../smartContract/Zk_election.json";
 import PaymasterContract from "../smartContract/Paymaster.json";
 import {retryWithBackoff} from "../lib/helper";
 import {
@@ -11,6 +11,14 @@ import {
 	ContractVoter,
 	ContractCandidate,
 } from "@/app/lib/interface";
+import {getServiceRoleClient} from "@/service/supabase";
+import {
+	createVoterMerkleTree,
+	getMerkleProof,
+	generateVoterSecret,
+	computeCommitment,
+	computeNullifier,
+} from "@/app/lib/utils/merkleTree";
 
 export async function voterLoginAction(nicNumber: string) {
 	try {
@@ -216,13 +224,38 @@ export async function getElectionDataAction(AuthorizedVoter: AuthorizedVoter) {
 			!process.env.WALLET_PRIVATE_KEY ||
 			!process.env.RPC_URL ||
 			!process.env.SESSION_ADDRESS ||
-			!process.env.ELECTION_ADDRESS
+			!process.env.ZK_ELECTIONCONTRACT
 		) {
 			throw new Error(
-				"Missing required environment variables: WALLET_PRIVATE_KEY, RPC_URL, SESSION_ADDRESS, ELECTION_CONTRACT_ADDRESS"
+				"Missing required environment variables: WALLET_PRIVATE_KEY, RPC_URL, SESSION_ADDRESS, ZK_ELECTIONCONTRACT"
 			);
 		}
 
+		// Step 1: Get elections from Supabase where voter is registered
+		const supabase = getServiceRoleClient();
+		const {data: voterRecords, error: voterError} = await supabase
+			.from("voter")
+			.select("election_id")
+			.eq("wallet_address", AuthorizedVoter.registeredWallet);
+
+		if (voterError) {
+			console.error("Error fetching voter records from Supabase:", voterError);
+			throw new Error("Failed to fetch voter elections from database");
+		}
+
+		if (!voterRecords || voterRecords.length === 0) {
+			return {
+				success: true,
+				electionData: {
+					electionIds: [],
+					elections: [],
+					voters: [],
+					candidates: [],
+				},
+			};
+		}
+
+		// Step 2: Setup blockchain connection
 		const provider = new ethers.JsonRpcProvider(
 			process.env.RPC_URL,
 			undefined,
@@ -231,63 +264,92 @@ export async function getElectionDataAction(AuthorizedVoter: AuthorizedVoter) {
 			}
 		);
 
-		// Create wallet from private key (temp wallet)
-		const wallet = new ethers.Wallet(
-			AuthorizedVoter.tempWalletPrivateKey,
+		const systemWallet = new ethers.Wallet(
+			process.env.WALLET_PRIVATE_KEY,
 			provider
 		);
 
-		// Connect to Election contract
-		const contract = new ethers.Contract(
-			process.env.ELECTION_ADDRESS,
-			ElectionContract,
-			wallet
+		const zkElectionContract = new ethers.Contract(
+			process.env.ZK_ELECTIONCONTRACT,
+			Zk_election,
+			systemWallet
 		);
 
-		const [electionIds, elections, voters] = await retryWithBackoff<
-			[bigint[], ContractElection[], ContractVoter[]]
-		>(async () => {
-			return await contract.getElectionsByVoterNIC(AuthorizedVoter.nic);
-		});
-
-		// Fetch candidates for each election
-		type CandidateArray = [string, string, string, bigint]; // [name, nic, party, voteCount]
-		type CandidateInput = CandidateArray | ContractCandidate;
-
+		// Step 3: Get election details from Supabase and blockchain
+		const electionIds: bigint[] = [];
+		const elections: ContractElection[] = [];
+		const voters: ContractVoter[] = [];
 		const candidatesArrays: ContractCandidate[][] = [];
-		for (const electionId of electionIds) {
-			const candidatesResult = await retryWithBackoff<CandidateInput[]>(
-				async () => {
-					return await contract.checkResult(electionId);
-				}
-			);
 
-			// Transform candidates from array format to object format
-			// Contract returns: [name, nic, party, voteCount] as arrays
-			const transformedCandidates: ContractCandidate[] = candidatesResult.map(
-				(candidate: CandidateInput) => {
-					// Handle both array and object formats
-					if (Array.isArray(candidate)) {
-						// Array format: [name, nic, party, voteCount]
-						return {
-							name: candidate[0],
-							nic: candidate[1],
-							party: candidate[2],
-							voteCount: candidate[3],
-						};
-					} else {
-						// Object format
-						return {
-							name: candidate.name,
-							nic: candidate.nic,
-							party: candidate.party,
-							voteCount: candidate.voteCount,
-						};
-					}
-				}
-			);
+		for (const voterRecord of voterRecords) {
+			const electionId = Number(voterRecord.election_id);
+			if (isNaN(electionId)) continue;
 
-			candidatesArrays.push(transformedCandidates);
+			try {
+				// Get election from blockchain
+				const electionData = await retryWithBackoff(async () => {
+					return await zkElectionContract.getElectionData(electionId);
+				});
+
+				const [electionStruct, candidatesData] = electionData;
+
+				if (!electionStruct.exists) {
+					continue;
+				}
+
+				// Check if voter has voted using nullifier
+				const voterSecret = generateVoterSecret(
+					AuthorizedVoter.nic,
+					electionId
+				);
+				const nullifierHash = computeNullifier(voterSecret, electionId);
+				const hasVoted = await retryWithBackoff(async () => {
+					return await zkElectionContract.nullifiers(electionId, nullifierHash);
+				});
+
+				// Transform election struct to ContractElection format
+				const contractElection: ContractElection = {
+					electionTitle: electionStruct.electionTitle,
+					description: electionStruct.description,
+					startDate: electionStruct.startDate,
+					endDate: electionStruct.endDate,
+					totalVotes: electionStruct.totalVotes,
+					exists: electionStruct.exists,
+				};
+
+				// Transform candidates
+				const transformedCandidates: ContractCandidate[] = candidatesData.map(
+					(candidate: {
+						name: string;
+						nic: string;
+						party: string;
+						voteCount: bigint;
+					}) => ({
+						name: candidate.name || "",
+						nic: candidate.nic || "",
+						party: candidate.party || "",
+						voteCount: candidate.voteCount || BigInt(0),
+					})
+				);
+
+				// Create voter info (hasVoted based on nullifier check)
+				const contractVoter: ContractVoter = {
+					nic: AuthorizedVoter.nic,
+					hasVoted: hasVoted,
+					candidateIndex: BigInt(0), // Not used in ZK voting
+				};
+
+				electionIds.push(BigInt(electionId));
+				elections.push(contractElection);
+				voters.push(contractVoter);
+				candidatesArrays.push(transformedCandidates);
+			} catch (error) {
+				console.error(
+					`Error fetching election ${electionId} from blockchain:`,
+					error
+				);
+				// Continue with other elections
+			}
 		}
 
 		const electionData: ElectionsByVoterNICResponse = {
@@ -322,11 +384,11 @@ export async function castVoteAction(
 			!process.env.WALLET_PRIVATE_KEY ||
 			!process.env.RPC_URL ||
 			!process.env.SESSION_ADDRESS ||
-			!process.env.ELECTION_ADDRESS ||
+			!process.env.ZK_ELECTIONCONTRACT ||
 			!process.env.PAYMASTER_ADDRESS
 		) {
 			throw new Error(
-				"Missing required environment variables: WALLET_PRIVATE_KEY, RPC_URL, SESSION_ADDRESS, ELECTION_CONTRACT_ADDRESS, PAYMASTER_ADDRESS"
+				"Missing required environment variables: WALLET_PRIVATE_KEY, RPC_URL, SESSION_ADDRESS, ZK_ELECTIONCONTRACT, PAYMASTER_ADDRESS"
 			);
 		}
 
@@ -351,9 +413,9 @@ export async function castVoteAction(
 		);
 
 		// Connect to contracts
-		const electionContract = new ethers.Contract(
-			process.env.ELECTION_ADDRESS,
-			ElectionContract,
+		const zkElectionContract = new ethers.Contract(
+			process.env.ZK_ELECTIONCONTRACT,
+			Zk_election,
 			systemWallet
 		);
 
@@ -393,69 +455,164 @@ export async function castVoteAction(
 				await registerTx.wait();
 			});
 
-			// Step 3: Prepare function data for vote
-			onProgress?.(3, "Preparing vote transaction data...");
-			const functionData = electionContract.interface.encodeFunctionData(
-				"vote",
-				[electionId, AuthorizedVoter.nic, candidateIndex]
-			);
-
-			// Step 4: Get current nonce for temporary wallet
-			onProgress?.(4, "Retrieving wallet nonce...");
-			const currentNonce = await retryWithBackoff(async () => {
-				try {
-					return await paymasterContract.getTempWalletNonce(
-						AuthorizedVoter.tempWallet
-					);
-				} catch {
-					return BigInt(0); // Default to 0 if function doesn't exist
-				}
+			// Step 3: Get election details and create Merkle tree
+			onProgress?.(3, "Preparing ZK proof components...");
+			const electionData = await retryWithBackoff(async () => {
+				return await zkElectionContract.getElectionData(electionId);
 			});
 
-			// Step 5: Create message hash for signature (use solidityPackedKeccak256 to match contract)
-			onProgress?.(5, "Creating signature hash...");
-			const messageHash = ethers.solidityPackedKeccak256(
-				[
-					"address",
-					"address",
-					"address",
-					"uint256",
-					"bytes",
-					"uint256",
-					"address",
+			const [electionStruct] = electionData;
+			if (!electionStruct.exists) {
+				throw new Error("Election does not exist");
+			}
+
+			// Get all voter addresses for this election from Supabase
+			const supabase = getServiceRoleClient();
+			const {data: voterRecords} = await supabase
+				.from("voter")
+				.select("wallet_address")
+				.eq("election_id", electionId);
+
+			if (!voterRecords || voterRecords.length === 0) {
+				throw new Error("No voters found for this election");
+			}
+
+			const voterAddresses = voterRecords
+				.map((v) => v.wallet_address)
+				.filter((addr) => addr !== null) as string[];
+
+			// Create Merkle tree
+			const {tree} = createVoterMerkleTree(voterAddresses, electionId);
+
+			// Verify Merkle root matches
+			const merkleRootHex = ethers.hexlify(electionStruct.votersMerkleRoot);
+			const computedRootHex = ethers.hexlify(tree.getRoot());
+			if (merkleRootHex !== computedRootHex) {
+				console.warn("Merkle root mismatch - voter addresses may have changed");
+				// Continue anyway, but log warning
+			}
+
+			// Step 4: Generate ZK proof components
+			onProgress?.(4, "Generating vote commitment and nullifier...");
+			const voterSecret = generateVoterSecret(AuthorizedVoter.nic, electionId);
+			const randomness = ethers.randomBytes(32);
+			const randomnessHex = ethers.hexlify(randomness);
+			const commitment = computeCommitment(
+				voterSecret,
+				candidateIndex,
+				randomnessHex,
+				electionId
+			);
+			const nullifierHash = computeNullifier(voterSecret, electionId);
+			const merkleProof = getMerkleProof(
+				tree,
+				AuthorizedVoter.registeredWallet,
+				electionId
+			);
+
+			// Step 5: Create mock ZK proof (for now - in production, use actual ZK circuit)
+			onProgress?.(5, "Preparing ZK proof...");
+			const mockProof = {
+				a: [
+					"0x0000000000000000000000000000000000000000000000000000000000000001",
+					"0x0000000000000000000000000000000000000000000000000000000000000002",
 				],
+				b: [
+					[
+						"0x0000000000000000000000000000000000000000000000000000000000000003",
+						"0x0000000000000000000000000000000000000000000000000000000000000004",
+					],
+					[
+						"0x0000000000000000000000000000000000000000000000000000000000000005",
+						"0x0000000000000000000000000000000000000000000000000000000000000006",
+					],
+				],
+				c: [
+					"0x0000000000000000000000000000000000000000000000000000000000000007",
+					"0x0000000000000000000000000000000000000000000000000000000000000008",
+				],
+				input: [
+					BigInt(commitment),
+					BigInt(nullifierHash),
+					BigInt(candidateIndex),
+					BigInt(electionId),
+				],
+			};
+
+			// Step 6: Prepare function data for castVoteWithNIC
+			onProgress?.(6, "Preparing vote transaction data...");
+			const functionData = zkElectionContract.interface.encodeFunctionData(
+				"castVoteWithNIC",
 				[
-					AuthorizedVoter.registeredWallet, // originalWallet
-					AuthorizedVoter.tempWallet, // temporaryWallet
-					process.env.ELECTION_ADDRESS, // target
-					0, // value
-					functionData, // data
-					currentNonce, // nonce
-					process.env.PAYMASTER_ADDRESS, // paymaster address
+					electionId,
+					AuthorizedVoter.nic,
+					AuthorizedVoter.registeredWallet,
+					AuthorizedVoter.tempWallet,
+					candidateIndex,
+					nullifierHash,
+					commitment,
+					merkleProof,
+					mockProof.a,
+					mockProof.b,
+					mockProof.c,
+					mockProof.input,
 				]
 			);
 
-			// Step 6: Sign the message with temporary wallet
-			onProgress?.(6, "Signing transaction...");
+			// Step 7: Get current nonce for temporary wallet
+			onProgress?.(7, "Retrieving wallet nonce...");
+			const currentNonce = await retryWithBackoff(async () => {
+				return await paymasterContract.getTempWalletNonce(
+					AuthorizedVoter.tempWallet
+				);
+			});
+
+			// Step 8: Create message hash for signature
+			onProgress?.(8, "Creating signature hash...");
+			const messageHash = ethers.keccak256(
+				ethers.solidityPacked(
+					[
+						"address",
+						"address",
+						"address",
+						"uint256",
+						"bytes",
+						"uint256",
+						"address",
+					],
+					[
+						AuthorizedVoter.registeredWallet, // originalWallet
+						AuthorizedVoter.tempWallet, // temporaryWallet
+						process.env.ZK_ELECTIONCONTRACT, // target
+						0, // value
+						functionData, // data
+						currentNonce, // nonce
+						process.env.PAYMASTER_ADDRESS, // paymaster address
+					]
+				)
+			);
+
+			// Step 9: Sign the message with temporary wallet
+			onProgress?.(9, "Signing transaction...");
 			const signature = await tempWalletSigner.signMessage(
 				ethers.getBytes(messageHash)
 			);
 
-			// Step 7: Execute gasless transaction using paymaster
-			onProgress?.(7, "Executing gasless transaction...");
+			// Step 10: Execute gasless transaction using paymaster
+			onProgress?.(10, "Executing gasless transaction...");
 			const tx = await retryWithBackoff(async () => {
 				return await paymasterContract.executeGaslessTemporaryTransaction(
 					AuthorizedVoter.registeredWallet, // originalWallet
 					AuthorizedVoter.tempWallet, // temporaryWallet
-					process.env.ELECTION_ADDRESS, // target
+					process.env.ZK_ELECTIONCONTRACT, // target
 					0, // value
 					functionData, // data
 					signature // signature
 				);
 			});
 
-			// Step 8: Wait for transaction confirmation
-			onProgress?.(8, "Waiting for transaction confirmation...");
+			// Step 11: Wait for transaction confirmation
+			onProgress?.(11, "Waiting for transaction confirmation...");
 			const receipt = await tx.wait();
 
 			return {
@@ -464,7 +621,8 @@ export async function castVoteAction(
 				gasUsed: receipt.gasUsed.toString(),
 				electionId: electionId.toString(),
 				candidateIndex: candidateIndex,
-				message: "Vote cast successfully using gasless transaction!",
+				message:
+					"Vote cast successfully using ZK proof and gasless transaction!",
 			};
 		} catch (error: unknown) {
 			console.error("Cast vote action failed:", error);

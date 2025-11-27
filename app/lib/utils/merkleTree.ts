@@ -33,6 +33,79 @@ export function createVoterMerkleTree(
 }
 
 /**
+ * Get Merkle proof for a voter
+ * @param tree Merkle tree instance
+ * @param registeredWalletAddress Voter's REGISTERED wallet address (from NIC, not temporary wallet)
+ * @param electionId Election ID
+ * @returns Array of proof hashes
+ * @note Uses registered wallet address from NICWalletRegistry, not temporary session wallet
+ */
+export function getMerkleProof(
+	tree: MerkleTree,
+	registeredWalletAddress: string,
+	electionId: number
+): string[] {
+	// Create leaf using registered wallet address (not temporary wallet)
+	const leaf = keccak256(
+		ethers.solidityPacked(
+			["address", "uint256"],
+			[registeredWalletAddress, electionId]
+		)
+	);
+	const proof = tree.getProof(leaf);
+	return proof.map((p: {data: Buffer}) => "0x" + p.data.toString("hex"));
+}
+
+/**
+ * Generate voter secret from NIC number
+ * @param nic NIC number
+ * @param electionId Election ID
+ * @returns Secret hash
+ */
+export function generateVoterSecret(nic: string, electionId: number): string {
+	return ethers.keccak256(
+		ethers.solidityPacked(["string", "uint256"], [nic, electionId])
+	);
+}
+
+/**
+ * Compute vote commitment
+ * @param voterSecret Voter's secret
+ * @param candidateIndex Candidate index
+ * @param randomness Random value
+ * @param electionId Election ID
+ * @returns Commitment hash
+ */
+export function computeCommitment(
+	voterSecret: string,
+	candidateIndex: number,
+	randomness: string,
+	electionId: number
+): string {
+	return ethers.keccak256(
+		ethers.solidityPacked(
+			["bytes32", "uint256", "bytes32", "uint256"],
+			[voterSecret, candidateIndex, randomness, electionId]
+		)
+	);
+}
+
+/**
+ * Compute nullifier hash (prevents double voting)
+ * @param voterSecret Voter's secret (generated from NIC)
+ * @param electionId Election ID
+ * @returns Nullifier hash
+ */
+export function computeNullifier(
+	voterSecret: string,
+	electionId: number
+): string {
+	return ethers.keccak256(
+		ethers.solidityPacked(["bytes32", "uint256"], [voterSecret, electionId])
+	);
+}
+
+/**
  * Get registered wallet addresses from NIC numbers
  * @param nicNumbers Array of NIC numbers
  * @param registryContract NICWalletRegistry contract instance
